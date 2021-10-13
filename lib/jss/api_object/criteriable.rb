@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -152,26 +152,21 @@ module JSS
     # @return [void]
     #
     def parse_criteria
-      @criteria = JSS::Criteriable::Criteria.new
-      @criteria.criteria = @init_data[:criteria].map { |c| JSS::Criteriable::Criterion.new c } if @init_data[:criteria]
-
-      @criteria.container = self
+      @criteria = (JSS::Criteriable::Criteria.new @init_data[:criteria].map { |c| JSS::Criteriable::Criterion.new c } if @init_data[:criteria])
+      @criteria.container = self if @criteria
     end
 
     #
     # Change the criteria, it must be a JSS::Criteriable::Criteria instance
     #
-    # @param new_criteria[JSS::Criteriable::Criteria, nil] the new criteria. An
-    #   empty criteria object is used if nil is passed.
+    # @param new_criteria[JSS::Criteriable::Criteria] the new criteria
     #
     # @return [void]
     #
     def criteria=(new_criteria)
-      new_criteria ||= JSS::Criteriable::Criteria.new
       raise JSS::InvalidDataError, 'JSS::Criteriable::Criteria instance required' unless new_criteria.is_a?(JSS::Criteriable::Criteria)
-
       @criteria = new_criteria
-      @criteria.container = self unless new_criteria.nil?
+      @criteria.container = self
       @need_to_update = true
     end
 

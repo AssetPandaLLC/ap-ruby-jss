@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -180,34 +180,18 @@ module JSS
     # Where is the Site data in the API JSON?
     SITE_SUBSET = :general
 
-    # these keys,  as well as :id and :name, can be used to look up objects
-    # of this class in the JSS
-    #
-    # the wierd alises mac_addresse and macaddresse
-    # are for proper pluralization of 'mac_address' and such
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    #   DEPRECATED, with be removed in a future release.
+    VALID_DATA_KEYS = %i[sus distribution_point alt_mac_address].freeze
+
+    # these keys,  as well as :id and :name, can be used to look up objects of this class in the JSS
     OTHER_LOOKUP_KEYS = {
-      udid: {
-        aliases: [:uuid, :guid],
-        fetch_rsrc_key: :udid
-      },
-      serial_number: {
-        aliases: [:serialnumber, :sn],
-        fetch_rsrc_key: :serialnumber
-      },
-      mac_address: {
-        aliases: [
-          :mac_address,
-          :mac_addresse,
-          :macaddress,
-          :macaddresse,
-          :macaddr
-        ],
-        fetch_rsrc_key: :macaddress
-      }
-
+      udid: { rsrc_key: :udid, list: :all_udids },
+      serialnumber: { rsrc_key: :serialnumber, list: :all_serial_numbers },
+      serial_number: { rsrc_key: :serialnumber, list: :all_serial_numbers },
+      macaddress: { rsrc_key: :macaddress, list: :all_mac_addresses },
+      mac_address: { rsrc_key: :macaddress, list: :all_mac_addresses }
     }.freeze
-
-    NON_UNIQUE_NAMES = true
 
     # This class lets us seach for computers
     SEARCH_CLASS = JSS::AdvancedComputerSearch
@@ -324,28 +308,25 @@ module JSS
     # @return [Array<Hash{:name=>String, :id=> Integer}>]
     #
     def self.all(refresh = false, api: JSS.api)
-      cache = api.object_list_cache
-      cache_key = self::RSRC_LIST_KEY
-      cache[cache_key] = nil if refresh
-      return cache[cache_key] if cache[cache_key]
-
-      cache[cache_key] = api.get_rsrc(self::LIST_RSRC)[cache_key]
+      api.object_list_cache[RSRC_LIST_KEY] = nil if refresh
+      return api.object_list_cache[RSRC_LIST_KEY] if api.object_list_cache[RSRC_LIST_KEY]
+      api.object_list_cache[RSRC_LIST_KEY] = api.get_rsrc(self::LIST_RSRC)[self::RSRC_LIST_KEY]
     end
 
-    # # @return [Array<String>] all computer serial numbers in the jss
-    # def self.all_serial_numbers(refresh = false, api: JSS.api)
-    #   all(refresh, api: api).map { |i| i[:serial_number] }
-    # end
-    #
-    # # @return [Array<String>] all computer mac_addresses in the jss
-    # def self.all_mac_addresses(refresh = false, api: JSS.api)
-    #   all(refresh, api: api).map { |i| i[:mac_address] }
-    # end
-    #
-    # # @return [Array<String>] all computer udids in the jss
-    # def self.all_udids(refresh = false, api: JSS.api)
-    #   all(refresh, api: api).map { |i| i[:udid] }
-    # end
+    # @return [Array<String>] all computer serial numbers in the jss
+    def self.all_serial_numbers(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:serial_number] }
+    end
+
+    # @return [Array<String>] all computer mac_addresses in the jss
+    def self.all_mac_addresses(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:mac_address] }
+    end
+
+    # @return [Array<String>] all computer udids in the jss
+    def self.all_udids(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:udid] }
+    end
 
     # @return [Array<Hash>] all managed computers in the jss
     def self.all_managed(refresh = false, api: JSS.api)
@@ -503,8 +484,8 @@ module JSS
       raise "Subset must be one of :#{MGMT_DATA_SUBSETS.join ', :'}" unless MGMT_DATA_SUBSETS.include? subset
       subset_rsrc = MGMT_DATA_RSRC + "/id/#{id}/subset/#{subset}"
       subset_data = api.get_rsrc(subset_rsrc)[MGMT_DATA_KEY]
-      return subset_data[subset] unless only
-      subset_data[subset].map { |d| d[only] }
+      return subset_data unless only
+      subset_data.map { |d| d[only] }
     end
     private_class_method :management_data_subset
 
@@ -529,11 +510,8 @@ module JSS
     # @return [Time] when was it added to the JSS
     attr_reader :initial_entry_date
 
-    # @return [IPAddr] the last known IP address from the server's perspective
+    # @return [IPAddr] the last known IP address
     attr_reader :ip_address
-
-    # @return [IPAddr] the last known IP address from the client's perspecive
-    attr_reader :reported_ip_address
 
     # @return [Boolean]
     attr_reader :itunes_store_account_is_active
@@ -558,9 +536,6 @@ module JSS
 
     # @return [Boolean] doesit support MDM?
     attr_reader :mdm_capable
-
-    # @return [Hash] some MDM status details in general
-    attr_reader :management_status
 
     # @return [Array] user accts that support MDM?
     #  NOTE: This suffers from the JSON-Hash-treated-like_XML-Array-loses-data
@@ -787,7 +762,6 @@ module JSS
         @initial_entry_date = JSS.epoch_to_time @init_data[:general][:initial_entry_date_epoch]
         @last_enrolled = JSS.epoch_to_time @init_data[:general][:last_enrolled_date_epoch]
         @ip_address = @init_data[:general][:ip_address]
-        @reported_ip_address = @init_data[:general][:last_reported_ip]
         @itunes_store_account_is_active = @init_data[:general][:itunes_store_account_is_active]
         @jamf_version = @init_data[:general][:jamf_version]
         @last_contact_time = JSS.epoch_to_time @init_data[:general][:last_contact_time_epoch]
@@ -800,8 +774,6 @@ module JSS
 
         @configuration_profiles = @init_data[:configuration_profiles]
 
-        @management_status = @init_data[:general][:management_status]
-
         @groups_accounts = @init_data[:groups_accounts]
         @hardware = @init_data[:hardware]
         @peripherals = @init_data[:peripherals]
@@ -813,7 +785,7 @@ module JSS
             identity: cert[:identity],
             name: cert[:name]
           }
-        end # map do cert
+        end
 
         # Freeze immutable things.
         # These are updated via recon, and aren't sent
@@ -826,8 +798,6 @@ module JSS
         @software.freeze
 
         @management_password = nil
-
-      # not in jss
       else
         @udid = args[:udid]
         @serial_number = args[:serial_number]
@@ -836,42 +806,8 @@ module JSS
         @alt_mac_address = args[:alt_mac_address]
         @barcode1 = args[:barcode_1]
         @barcode2 = args[:barcode_2]
-      end # if in jss
+      end
     end # initialize
-
-    # Make all the keys of the @hardware hash available as top-level methods
-    # on the Computer instance.
-    #
-    # This is done by catching method_missing and seeing if the method exists
-    # as key of @hardware, and if so, retuning that value, if not, passing on
-    # the method_missing call.
-    # So:
-    #    comp.processor_type
-    # is now the same as:
-    #    comp.hardware[:processor_type]
-    #
-    # The reason for using `method_missing` rather than looping through the
-    # @hardware hash during initialization and doing `define_method` is
-    # speed. When instantiating lots of computers, defining the methods
-    # for each one, when those methods may not be needed, just slows things
-    # down. This way, they're only used when needed.
-    #
-    # This method may be expanded in the future to handle other ad-hoc,
-    # top-level methods.
-    #
-    def method_missing(method, *args, &block)
-      if @hardware.key? method
-        @hardware[method]
-      else
-        super
-      end # if
-    end # def
-
-    # Companion to method_missing, allows for easier debugging in backtraces
-    # that involve missing methods.
-    def respond_to_missing?(method, *)
-      @hardware.key?(method) || super
-    end
 
     # @return [Array] the JSS groups to which thismachine belongs (smart and static)
     #
@@ -1039,38 +975,22 @@ module JSS
     end
 
     def asset_tag=(new_val)
-      new_val =  new_val.to_s.strip
-      return nil if @asset_tag.to_s == new_val
-
+      return nil if @asset_tag == new_val
+      new_val.strip!
       @asset_tag = new_val
       @need_to_update = true
     end
 
-    # flush the logs for this computer in a given policy
-    # @see JSS::Policy.flush_logs
-    #
-    def flush_policy_logs(policy, older_than: 0, period: :days)
-      JSS::Policy.flush_logs(
-        policy,
-        older_than: older_than,
-        period: period,
-        computers: [@id],
-        api: @api
-      )
-    end
-
     def barcode1=(new_val)
-      new_val = new_val.strip
       return nil if @barcode1 == new_val
-
+      new_val.strip!
       @barcode1 = new_val
       @need_to_update = true
     end
 
     def barcode2=(new_val)
-      new_val = new_val.strip
       return nil if @barcode2 == new_val
-
+      new_val.strip!
       @barcode2 = new_val
       @need_to_update = true
     end
@@ -1095,13 +1015,13 @@ module JSS
 
     def serial_number=(new_val)
       return nil if new_val == @serial_number
-      @serial_number =  new_val.empty? ? new_val : JSS::Validate.doesnt_already_exist(JSS::Computer, :serial_number, new_val, api: api)
+      @serial_number =  new_val.empty? ? new_val : JSS::Validate.unique_identifier(JSS::Computer, :serial_number, new_val, api: api)
       @need_to_update = true
     end
 
     def udid=(new_val)
       return nil if new_val == @udid
-      @udid = new_val.empty? ? new_val : JSS::Validate.doesnt_already_exist(JSS::Computer, :udid, new_val, api: api)
+      @udid = new_val.empty? ? new_val : JSS::Validate.unique_identifier(JSS::Computer, :udid, new_val, api: api)
       @need_to_update = true
     end
 

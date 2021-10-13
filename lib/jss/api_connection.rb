@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
 ###    with the following modification; you may not use this file except in
@@ -24,6 +24,18 @@
 
 ###
 module JSS
+
+  # Constants
+  #####################################
+
+  # Module Variables
+  #####################################
+
+  # Module Methods
+  #####################################
+
+  # Classes
+  #####################################
 
   # Instances of this class represent a REST connection to a JSS API.
   #
@@ -215,6 +227,42 @@ module JSS
   #   # the variable 'prod2_victim_md' now contains a JSS::MobileDevice queried
   #   # through the connection 'production_api2'.
   #
+  # == Using the APIConnection itself to make API calls.
+  #
+  # Rather than passing an APIConnection into another method, you can call
+  # similar methods on the connection itself. For example, these two calls
+  # have the same result as the two examples above:
+  #
+  #   prod2_computer_sns = production_api2.all :Computer, only: :serial_numbers
+  #   prod2_victim_md = production_api2.fetch :MobileDevice, id: 832
+  #
+  # Here are the API calls you can make directly from an APIConnection object.
+  # They behave practically identically to the same methods in the APIObject
+  # subclasses, since they just call those methods, passing themselves in as the
+  # APIConnection to use.
+  #
+  # - {#all}  The 'list' methods of the various APIObject classes. Use the 'only:'
+  #   parameter to specify one of the sub-list-methods, like #all_ids or
+  #   #all_laptops, e.g. `my_connection.all :computers, only: :id`
+  # - {#map_all_ids} the equivalent of #map_all_ids_to in the APIObject classes
+  # - {#valid_id} given a class and an identifier (like macaddress or udid)
+  #   return a valid id or nil
+  # - {#exist?} given a class and an identifier (like macaddress or udid) does
+  #   the identifier exist for the class in the JSS
+  # - {#match} list items in the JSS matching a query
+  #   (if the object is {Matchable})
+  # - {#fetch} retrieve an object from the JSS
+  # - {#make} instantiate an object to be created in the JSS
+  # - {#computer_checkin_settings} same as {Computer.checkin_settings}
+  # - {#computer_inventory_collection_settings} same as {Computer.inventory_collection_settings}
+  # - {#computer_application_usage} same as {Computer.application_usage}
+  # - {#computer_management_data} same as {Computer.management_data}
+  # - {#master_distribution_point} same as {DistributionPoint.master_distribution_point}
+  # - {#my_distribution_point} same as {DistributionPoint.my_distribution_point}
+  # - {#network_ranges} same as {NetworkSegment.network_ranges}
+  # - {#network_segments_for_ip} same as {NetworkSegment.segments_for_ip}
+  # - {#my_network_segments} same as {NetworkSegment.my_network_segments}
+  #
   # == Low-level use of APIConnection instances.
   #
   # For most cases, using APIConnection instances as mentioned above
@@ -223,7 +271,7 @@ module JSS
   # {#get_rsrc}, {#put_rsrc}, {#post_rsrc}, & {#delete_rsrc}
   # documented below.
   #
-  # For even lower-level work, you can access the underlying Faraday::Connection
+  # For even lower-level work, you can access the underlying RestClient::Resource
   # inside the APIConnection via the connection's {#cnx} attribute.
   #
   # APIConnection instances also have a {#server} attribute which contains an
@@ -276,18 +324,6 @@ module JSS
 
     RSRC_NOT_FOUND_MSG = 'The requested resource was not found'.freeze
 
-    # These classes are extendable, and may need cache flushing for EA definitions
-    EXTENDABLE_CLASSES = [JSS::Computer, JSS::MobileDevice, JSS::User].freeze
-
-    # values for the format param of get_rsrc
-    GET_FORMATS = %i[json xml].freeze
-
-    HTTP_ACCEPT_HEADER = 'Accept'.freeze
-    HTTP_CONTENT_TYPE_HEADER = 'Content-Type'.freeze
-
-    MIME_JSON = 'application/json'.freeze
-    MIME_XML = 'application/xml'.freeze
-
     # Attributes
     #####################################
 
@@ -295,7 +331,7 @@ module JSS
     attr_reader :user
     alias jss_user user
 
-    # @return [Faraday::Connection] the underlying connection resource
+    # @return [RestClient::Resource] the underlying connection resource
     attr_reader :cnx
 
     # @return [Boolean] are we connected right now?
@@ -317,7 +353,7 @@ module JSS
     # @return [String] the protocol being used: http or https
     attr_reader :protocol
 
-    # @return [Faraday::Response] The response from the most recent API call
+    # @return [RestClient::Response] The response from the most recent API call
     attr_reader :last_http_response
 
     # @return [String] The base URL to to the current REST API
@@ -329,45 +365,15 @@ module JSS
     attr_reader :name
 
     # @return [Hash]
-    # This Hash caches the result of the the first API query for an APIObject
-    # subclass's .all summary list, keyed by the subclass's RSRC_LIST_KEY.
+    # This Hash holds the most recent API query for a list of all items in any
+    # APIObject subclass, keyed by the subclass's RSRC_LIST_KEY.
     # See the APIObject.all class method.
     #
-    # It also holds related data items for speedier processing:
-    #
-    # - The Hashes created by APIObject.map_all_ids_to(foo), keyed by
-    #   "#{RSRC_LIST_KEY}_map_#{other_key}".to_sym
-    #
-    # - This hash also holds a cache of the rarely-used APIObject.all_objects
-    #   hash, keyed by "#{RSRC_LIST_KEY}_objects".to_sym
-    #
-    #
-    # When APIObject.all, and related methods are called without an argument,
+    # When the APIObject.all method is called without an argument,
     # and this hash has a matching value, the value is returned, rather than
     # requerying the API. The first time a class calls .all, or whnever refresh
     # is not false, the API is queried and the value in this hash is updated.
     attr_reader :object_list_cache
-
-    # @return [Hash{Class: Hash{String => JSS::ExtensionAttribute}}]
-    # This Hash caches the Extension Attribute
-    # definition objects for the three types of ext. attribs:
-    # ComputerExtensionAttribute, MobileDeviceExtensionAttribute, and
-    # UserExtensionAttribute, whenever they are fetched for parsing or
-    # validating extention attribute data.
-    #
-    # The top-level keys are the EA classes themselves:
-    # - ComputerExtensionAttribute
-    # - MobileDeviceExtensionAttribute
-    # - UserExtensionAttribute
-    #
-    # These each point to a Hash of their instances, keyed by name, e.g.
-    #   {
-    #    "A Computer EA" => <JSS::ComputerExtensionAttribute...>,
-    #    "A different Computer EA" => <JSS::ComputerExtensionAttribute...>,
-    #    ...
-    #   }
-    #
-    attr_reader :ext_attr_definition_cache
 
     # Constructor
     #####################################
@@ -384,7 +390,7 @@ module JSS
     #
     def initialize(args = {})
       @name = args.delete :name
-      @name ||= :unknown
+      @name ||= :disconnected
       @connected = false
       @object_list_cache = {}
       connect args unless args.empty?
@@ -412,6 +418,8 @@ module JSS
     # @option args :use_ssl[Boolean] should the connection be made over SSL? Defaults to true.
     #
     # @option args :verify_cert[Boolean] should HTTPS SSL certificates be verified. Defaults to true.
+    #   If your connection raises RestClient::SSLCertificateNotVerified, and you don't care about the
+    #   validity of the SSL cert. just set this explicitly to false.
     #
     # @option args :user[String] a JSS user who has API privs, required if not defined in JSS::CONFIG
     #
@@ -428,13 +436,8 @@ module JSS
     # @return [true]
     #
     def connect(args = {})
-      # new connections always get new caches
-      flushcache
-
       args[:no_port_specified] = args[:port].to_s.empty?
       args = apply_connection_defaults args
-      @timeout = args[:timeout]
-      @open_timeout = args[:open_timeout]
 
       # ensure an integer
       args[:port] &&= args[:port].to_i
@@ -453,7 +456,7 @@ module JSS
       args[:password] = acquire_password args
 
       # heres our connection
-      @cnx = create_connection args[:password]
+      @cnx = RestClient::Resource.new(@rest_url.to_s, args)
 
       verify_server_version
 
@@ -502,50 +505,43 @@ module JSS
       @connected = false
     end # disconnect
 
-    # Get a JSS resource
+    # Get an arbitrary JSS resource
+    #
     # The first argument is the resource to get (the part of the API url
-    # after the 'JSSResource/' ) The resource must be properly URL escaped
-    # beforehand. Note: URL.encode is deprecated, use CGI.escape
+    # after the 'JSSResource/' )
     #
-    # By default we get the data in JSON, and parse it into a ruby Hash
+    # By default we get the data in JSON, and parse it
+    # into a ruby data structure (arrays, hashes, strings, etc)
     # with symbolized Hash keys.
-    #
-    # If the second parameter is :xml then the XML version is retrieved and
-    # returned as a String.
-    #
-    # To get the raw JSON string as it comes from the API, pass raw_json: true
     #
     # @param rsrc[String] the resource to get
     #   (the part of the API url after the 'JSSResource/' )
     #
     # @param format[Symbol] either ;json or :xml
-    #   If the second argument is :xml, the XML data is returned as a String.
-    #
-    # @param raw_json[Boolean] When GETting JSON, return the raw unparsed string
-    #   (the XML is always returned as a raw string)
+    #  If the second argument is :xml, the XML data is returned as a String.
     #
     # @return [Hash,String] the result of the get
     #
-    def get_rsrc(rsrc, format = :json, raw_json: false)
+    def get_rsrc(rsrc, format = :json)
+      # puts object_id
       validate_connected
-      raise JSS::InvalidDataError, 'format must be :json or :xml' unless GET_FORMATS.include? format
 
-      @last_http_response =
-        @cnx.get(rsrc) do |req|
-          req.headers[HTTP_ACCEPT_HEADER] = format == :json ? MIME_JSON : MIME_XML
-        end
+      raise JSS::InvalidDataError, 'format must be :json or :xml' unless %i[json xml].include? format
 
-      unless @last_http_response.success?
-        handle_http_error
-        return
+      # TODO: fix what rubocop is complaining about in the line below.
+      # (I doubt we want to CGI.escape the whole resource)
+      rsrc = URI.encode rsrc
+      begin
+        @last_http_response = @cnx[rsrc].get(accept: format)
+      rescue RestClient::ExceptionWithResponse => e
+        handle_http_error e
       end
-
-      return JSON.parse(@last_http_response.body, symbolize_names: true) if format == :json && !raw_json
-
-      @last_http_response.body
+      # TODO: make sure we're returning the String version of the
+      # response (i.e. its body) here and in POST, PUT, DELETE.
+      format == :json ? JSON.parse(@last_http_response, symbolize_names: true) : @last_http_response
     end
 
-    # Update an existing JSS resource
+    # Change an existing JSS resource
     #
     # @param rsrc[String] the API resource being changed, the URL part after 'JSSResource/'
     #
@@ -560,18 +556,9 @@ module JSS
       xml.gsub!(/\r/, '&#13;')
 
       # send the data
-      @last_http_response =
-        @cnx.put(rsrc) do |req|
-          req.headers[HTTP_CONTENT_TYPE_HEADER] = MIME_XML
-          req.headers[HTTP_ACCEPT_HEADER] = MIME_XML
-          req.body = xml
-        end
-      unless @last_http_response.success?
-        handle_http_error
-        return
-      end
-
-      @last_http_response.body
+      @last_http_response = @cnx[rsrc].put(xml, content_type: 'text/xml')
+    rescue RestClient::ExceptionWithResponse => e
+      handle_http_error e
     end
 
     # Create a new JSS resource
@@ -582,24 +569,16 @@ module JSS
     #
     # @return [String] the xml response from the server.
     #
-    def post_rsrc(rsrc, xml)
+    def post_rsrc(rsrc, xml = '')
       validate_connected
 
       # convert CRs & to &#13;
-      xml&.gsub!(/\r/, '&#13;')
+      xml.gsub!(/\r/, '&#13;') if xml
 
       # send the data
-      @last_http_response =
-        @cnx.post(rsrc) do |req|
-          req.headers[HTTP_CONTENT_TYPE_HEADER] = MIME_XML
-          req.headers[HTTP_ACCEPT_HEADER] = MIME_XML
-          req.body = xml
-        end
-      unless @last_http_response.success?
-        handle_http_error
-        return
-      end
-      @last_http_response.body
+      @last_http_response = @cnx[rsrc].post xml, content_type: 'text/xml', accept: :json
+    rescue RestClient::ExceptionWithResponse => e
+      handle_http_error e
     end # post_rsrc
 
     # Delete a resource from the JSS
@@ -608,23 +587,17 @@ module JSS
     #
     # @return [String] the xml response from the server.
     #
-    def delete_rsrc(rsrc)
+    def delete_rsrc(rsrc, xml = nil)
       validate_connected
       raise MissingDataError, 'Missing :rsrc' if rsrc.nil?
 
+      # payload?
+      return delete_with_payload rsrc, xml if xml
+
       # delete the resource
-      @last_http_response =
-        @cnx.delete(rsrc) do |req|
-          req.headers[HTTP_CONTENT_TYPE_HEADER] = MIME_XML
-          req.headers[HTTP_ACCEPT_HEADER] = MIME_XML
-        end
-
-      unless @last_http_response.success?
-        handle_http_error
-        return
-      end
-
-      @last_http_response.body
+      @last_http_response = @cnx[rsrc].delete
+    rescue RestClient::ExceptionWithResponse => e
+      handle_http_error e
     end # delete_rsrc
 
     # Test that a given hostname & port is a JSS API server
@@ -640,8 +613,25 @@ module JSS
       # ssl_options like :OP_NO_SSLv2 and :OP_NO_SSLv3 will take time to figure out..
       return true if `/usr/bin/curl -s 'https://#{server}:#{port}/#{TEST_PATH}'`.include? TEST_CONTENT
       return true if `/usr/bin/curl -s 'http://#{server}:#{port}/#{TEST_PATH}'`.include? TEST_CONTENT
-
       false
+
+      # # try ssl first
+      # # NOTE:  doesn't work if we can't disallow SSLv3 or force TLSv1
+      # # See cheat above.
+      # begin
+      #   return true if open("https://#{server}:#{port}/#{TEST_PATH}", ssl_verify_mode: OpenSSL::SSL::VERIFY_NONE).read.include? TEST_CONTENT
+      #
+      # rescue
+      #   # then regular http
+      #   begin
+      #     return true if open("http://#{server}:#{port}/#{TEST_PATH}").read.include? TEST_CONTENT
+      #   rescue
+      #     # any errors = no API
+      #     return false
+      #   end # begin
+      # end # begin
+      # # if we're here, no API
+      # false
     end
 
     # The server to which we are connected, or will
@@ -652,44 +642,285 @@ module JSS
     #
     def hostname
       return @server_host if @server_host
-
       srvr = JSS::CONFIG.api_server_name
       srvr ||= JSS::Client.jss_server
       srvr
     end
     alias host hostname
 
-    # Empty all cached lists from this connection
-    # then run garbage collection to clear any available memory
-    #
-    # If an APIObject Subclass's RSRC_LIST_KEY is specified, only the caches
-    # for that class are flushed (e.g. :computers, :comptuer_groups)
-    #
-    # NOTE if you've referenced objects in these caches, those objects
-    # won't be removed from memory, but all cached data will be recached
-    # as needed.
-    #
-    # @param key[Symbol, Class] Flush only the caches for the given RSRC_LIST_KEY. or
-    #   the EAdef cache for the given extendable class. If nil (the default)
-    #   flushes all caches
-    #
-    # @return [void]
-    #
-    def flushcache(key = nil)
-      if EXTENDABLE_CLASSES.include? key
-        @ext_attr_definition_cache[key] = {}
-      elsif key
-        map_key_pfx = "#{key}_map_"
-        @object_list_cache.delete_if do |cache_key, _cache|
-          cache_key == key || cache_key.to_s.start_with?(map_key_pfx)
-        end
-        @ext_attr_definition_cache
-      else
-        @object_list_cache = {}
-        @ext_attr_definition_cache = {}
-      end
+    #################
 
-      GC.start
+    # Call one of the 'all*' methods on a JSS::APIObject subclass
+    # using this APIConnection.
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @param refresh[Boolean] Should the data be re-read from the API?
+    #
+    # @param only[String,Symbol] Limit the output to subset or data. All
+    #   APIObject subclasses can take :ids or :names, which calls the .all_ids
+    #   and .all_names methods. Some subclasses can take other options, e.g.
+    #   MobileDevice can take :udids
+    #
+    # @return [Array] The list of items for the class
+    #
+    def all(class_name, refresh = false, only: nil)
+      the_class = JSS.api_object_class(class_name)
+      list_method = only ? :"all_#{only}" : :all
+
+      raise ArgumentError, "Unknown identifier: #{only} for #{the_class}" unless
+        the_class.respond_to? list_method
+
+      the_class.send list_method, refresh, api: self
+    end
+
+    # Call the 'map_all_ids_to' method on a JSS::APIObject subclass
+    # using this APIConnection.
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @param refresh[Boolean] Should the data be re-read from the API?
+    #
+    # @param to[String,Symbol] the value to which the ids should be mapped
+    #
+    # @return [Hash] The ids for the class keyed to the requested identifier
+    #
+    def map_all_ids(class_name, refresh = false, to: nil)
+      raise "'to:' value must be provided for mapping ids." unless to
+      the_class = JSS.api_object_class(class_name)
+      the_class.map_all_ids_to to, refresh, api: self
+    end
+
+    # Call the 'valid_id' method on a JSS::APIObject subclass
+    # using this APIConnection. See {JSS::APIObject.valid_id}
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass,
+    #   see {JSS.api_object_class}
+    #
+    # @param identifier[String,Symbol] the value to which the ids should be mapped
+    #
+    # @param refresh[Boolean] Should the data be re-read from the API?
+    #
+    # @return [Integer, nil] the id of the matching object of the class,
+    #   or nil if there isn't one
+    #
+    def valid_id(class_name, identifier, refresh = true)
+      the_class = JSS.api_object_class(class_name)
+      the_class.valid_id identifier, refresh, api: self
+    end
+
+    # Call the 'exist?' method on a JSS::APIObject subclass
+    # using this APIConnection. See {JSS::APIObject.exist?}
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @param identifier[String,Symbol] the value to which the ids should be mapped
+    #
+    # @param refresh[Boolean] Should the data be re-read from the API?
+    #
+    # @return [Boolean] Is there an object of this class in the JSS matching
+    #   this indentifier?
+    #
+    def exist?(class_name, identifier, refresh = false)
+      !valid_id(class_name, identifier, refresh).nil?
+    end
+
+    # Call {Matchable.match} for the given class.
+    #
+    # See {Matchable.match}
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @return (see Matchable.match)
+    #
+    def match(class_name, term)
+      the_class = JSS.api_object_class(class_name)
+      raise JSS::UnsupportedError, "Class #{the_class} is not matchable" unless the_class.respond_to? :match
+      the_class.match term, api: self
+    end
+
+    # Retrieve an object of a given class from the API
+    # See {APIObject.fetch}
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @return [APIObject] The ruby-instance of the object.
+    #
+    def fetch(class_name, arg)
+      the_class = JSS.api_object_class(class_name)
+      the_class.fetch arg, api: self
+    end
+
+    # Make a ruby instance of a not-yet-existing APIObject
+    # of the given class
+    # See {APIObject.make}
+    #
+    # @param class_name[String,Symbol] The name of a JSS::APIObject subclass
+    #   see {JSS.api_object_class}
+    #
+    # @return [APIObject] The un-created ruby-instance of the object.
+    #
+    def make(class_name, **args)
+      the_class = JSS.api_object_class(class_name)
+      args[:api] = self
+      the_class.make args
+    end
+
+    # Call {JSS::Computer.checkin_settings} q.v.,  passing this API
+    # connection
+    #
+    def computer_checkin_settings
+      JSS::Computer.checkin_settings api: self
+    end
+
+    # Call {JSS::Computer.inventory_collection_settings} q.v., passing this API
+    # connection
+    #
+    def computer_inventory_collection_settings
+      JSS::Computer.inventory_collection_settings api: self
+    end
+
+    # Call {JSS::Computer.application_usage} q.v., passing this API
+    # connection
+    #
+    def computer_application_usage(ident, start_date, end_date = nil)
+      JSS::Computer.application_usage ident, start_date, end_date, api: self
+    end
+
+    # Call {JSS::Computer.management_data} q.v., passing this API
+    # connection
+    #
+    def computer_management_data(ident, subset: nil, only: nil)
+      JSS::Computer.management_data ident, subset: subset, only: only, api: self
+    end
+
+    # Call {JSS::Computer.history} q.v., passing this API
+    # connection
+    #
+    # @deprecated Please use JSS::Computer.management_history or its
+    #   convenience methods. @see JSS::ManagementHistory
+    #
+    def computer_history(ident, subset: nil)
+      JSS::Computer.history ident, subset, api: self
+    end
+
+    # Call {JSS::Computer.send_mdm_command} q.v.,  passing this API
+    # connection
+    #
+    # @deprecated Please use JSS::Computer.send_mdm_command or its
+    #   convenience methods. @see JSS::MDM
+    #
+    def send_computer_mdm_command(targets, command, passcode = nil)
+      opts = passcode ? { passcode: passcode } : {}
+      JSS::Computer.send_mdm_command targets, command, opts: opts, api: self
+    end
+
+    # Get the DistributionPoint instance for the master
+    # distribution point in the JSS. If there's only one
+    # in the JSS, return it even if not marked as master.
+    #
+    # @param refresh[Boolean] re-read from the API?
+    #
+    # @return [JSS::DistributionPoint]
+    #
+    def master_distribution_point(refresh = false)
+      @master_distribution_point = nil if refresh
+      return @master_distribution_point if @master_distribution_point
+
+      all_dps = JSS::DistributionPoint.all refresh, api: self
+
+      @master_distribution_point =
+        case all_dps.size
+        when 0
+          raise JSS::NoSuchItemError, 'No distribution points defined'
+        when 1
+          JSS::DistributionPoint.fetch id: all_dps.first[:id], api: self
+        else
+          JSS::DistributionPoint.fetch id: :master, api: self
+        end
+    end
+
+    # Get the DistributionPoint instance for the machine running
+    # this code, based on its IP address. If none is defined for this IP address,
+    # use the result of master_distribution_point
+    #
+    # @param refresh[Boolean] should the distribution point be re-queried?
+    #
+    # @return [JSS::DistributionPoint]
+    #
+    def my_distribution_point(refresh = false)
+      @my_distribution_point = nil if refresh
+      return @my_distribution_point if @my_distribution_point
+
+      my_net_seg = my_network_segments[0]
+      @my_distribution_point = JSS::NetworkSegment.fetch(id: my_net_seg, api: self).distribution_point if my_net_seg
+      @my_distribution_point ||= master_distribution_point refresh
+      @my_distribution_point
+    end
+
+    # All NetworkSegments in this jss as IPAddr object Ranges representing the
+    # Segment, e.g. with starting = 10.24.9.1 and ending = 10.24.15.254
+    # the range looks like:
+    #   <IPAddr: IPv4:10.24.9.1/255.255.255.255>..#<IPAddr: IPv4:10.24.15.254/255.255.255.255>
+    #
+    # Using the #include? method on those Ranges is very useful.
+    #
+    # @param refresh[Boolean] should the data be re-queried?
+    #
+    # @return [Hash{Integer => Range}] the network segments as IPv4 address Ranges
+    #
+    def network_ranges(refresh = false)
+      @network_ranges = nil if refresh
+      return @network_ranges if @network_ranges
+      @network_ranges = {}
+      JSS::NetworkSegment.all(refresh, api: self).each do |ns|
+        @network_ranges[ns[:id]] = IPAddr.new(ns[:starting_address])..IPAddr.new(ns[:ending_address])
+      end
+      @network_ranges
+    end # def network_segments
+
+    # Find the ids of the network segments that contain a given IP address.
+    #
+    # Even tho IPAddr.include? will take a String or an IPAddr
+    # I convert the ip to an IPAddr so that an exception will be raised if
+    # the ip isn't a valid ip.
+    #
+    # @param ip[String, IPAddr] the IP address to locate
+    #
+    # @param refresh[Boolean] should the data be re-queried?
+    #
+    # @return [Array<Integer>] the ids of the NetworkSegments containing the given ip
+    #
+    def network_segments_for_ip(ip)
+      ok_ip = IPAddr.new(ip)
+      matches = []
+      network_ranges.each { |id, subnet| matches << id if subnet.include?(ok_ip) }
+      matches
+    end
+
+    # Find the current network segment ids for the machine running this code
+    #
+    # @return [Array<Integer>]  the NetworkSegment ids for this machine right now.
+    #
+    def my_network_segments
+      network_segments_for_ip JSS::Client.my_ip_address
+    end
+
+    # Send an MDM command to one or more mobile devices managed by
+    # this JSS
+    #
+    # see {JSS::MobileDevice.send_mdm_command}
+    #
+    # @deprecated Please use JSS::MobileDevice.send_mdm_command or its
+    #   convenience methods. @see JSS::MDM
+    #
+    def send_mobiledevice_mdm_command(targets, command, data = {})
+      JSS::MobileDevice.send_mdm_command(targets, command, opts: data, api: self)
     end
 
     # Remove the various cached data
@@ -705,7 +936,6 @@ module JSS
       vars.delete :@network_ranges
       vars.delete :@my_distribution_point
       vars.delete :@master_distribution_point
-      vars.delete :@ext_attr_definition_cache
       vars
     end
 
@@ -715,7 +945,7 @@ module JSS
 
     # raise exception if not connected
     def validate_connected
-      raise JSS::InvalidConnectionError, "Connection '#{@name}' Not Connected. Use .connect first." unless connected?
+      raise JSS::InvalidConnectionError, 'Not Connected. Use .connect first.' unless connected?
     end
 
     # Apply defaults from the JSS::CONFIG,
@@ -764,7 +994,6 @@ module JSS
     #
     def apply_defaults_from_client(args)
       return unless JSS::Client.installed?
-
       # these settings can come from the jamf binary config, if this machine is a JSS client.
       args[:server] ||= JSS::Client.jss_server
       args[:port] ||= JSS::Client.jss_port.to_i
@@ -818,12 +1047,10 @@ module JSS
       # keep this basic level of info available for basic authentication
       # and JSS version checking.
       begin
-        data = get_rsrc('jssuser')
-      rescue JSS::AuthorizationError
+        @server = JSS::Server.new get_rsrc('jssuser')[:user], self
+      rescue RestClient::Unauthorized
         raise JSS::AuthenticationError, "Incorrect JSS username or password for '#{@user}@#{@server_host}:#{@port}'."
       end
-
-      @server = JSS::Server.new data[:user], self
 
       min_vers = JSS.parse_jss_version(JSS::MINIMUM_SERVER_VERSION)[:version]
       return if @server.version >= min_vers # we're good...
@@ -843,11 +1070,11 @@ module JSS
       @server_host = args[:server]
       @port = args[:port].to_i
 
-      # trim any potential  leading slash on server_path, ensure a trailing slash
       if args[:server_path]
-        @server_path = args[:server_path]
-        @server_path = @server_path[1..-1] if @server_path.start_with? '/'
-        @server_path << '/' unless @server_path.end_with? '/'
+        # remove leading & trailing slashes in serverpath if any
+        @server_path = args[:server_path].sub %r{^/*(.*?)/*$}, Regexp.last_match(1)
+        # re-add single trailing slash
+        @server_path << '/'
       end
 
       # we're using ssl if:
@@ -893,68 +1120,76 @@ module JSS
       if SSL_PORTS.include? args[:port]
         args[:use_ssl] = true unless args[:use_ssl] == false
       end
-      return unless args[:use_ssl]
-
       # if verify_cert is anything but false, we will verify
-      args[:verify_ssl] = args[:verify_cert] != false
-
-      # ssl version if not specified
-      args[:ssl_version] ||= DFT_SSL_VERSION
-
-      @ssl_options = {
-        verify: args[:verify_ssl],
-        version: args[:ssl_version]
-      }
+      args[:verify_ssl] = args[:verify_cert] == false ? OpenSSL::SSL::VERIFY_NONE : OpenSSL::SSL::VERIFY_PEER
     end
 
-    # Parses the @last_http_response
-    # and raises a JSS::APIError with a useful error message.
+    # Parses the HTTP body of a RestClient::ExceptionWithResponse
+    # (the parent of all HTTP error responses) and its subclasses
+    # and re-raises a JSS::APIError with a more
+    # useful error message.
+    #
+    # @param exception[RestClient::ExceptionWithResponse] the exception to parse
     #
     # @return [void]
     #
-    def handle_http_error
-      return if @last_http_response.success?
-
-      case @last_http_response.status
-      when 404
-        err = JSS::NoSuchItemError
-        msg = 'Not Found'
-      when 409
+    def handle_http_error(exception)
+      @last_http_response = exception.response
+      case exception
+      when RestClient::ResourceNotFound
+        # other methods catch this and report more details
+        raise exception
+      when RestClient::Conflict
         err = JSS::ConflictError
-        @last_http_response.body =~ /<p>(The server has not .*?)(<|$)/m
-        Regexp.last_match(1) ||  @last_http_response.body =~ %r{<p>Error: (.*?)</p>}
-        msg = Regexp.last_match(1)
-      when 400
+        msg_matcher = /<p>Error:(.*)(<|$)/m
+      when RestClient::BadRequest
         err = JSS::BadRequestError
-        @last_http_response.body =~ %r{>Bad Request</p>\n<p>(.*?)</p>\n<p>You can get technical detail}m
-        msg = Regexp.last_match(1)
-      when 401
-        err = JSS::AuthorizationError
-        msg = 'You are not authorized to do that.'
-      when (500..599)
-        err = JSS::APIRequestError
-        msg = 'There was an internal server error'
+        msg_matcher = %r{>Bad Request</p>\n<p>(.*?)</p>\n<p>You can get technical detail}m
+      when RestClient::Unauthorized
+        raise
       else
         err = JSS::APIRequestError
-        msg = "There was a error processing your request, status: #{@last_http_response.status}"
+        msg_matcher = %r{<body.*?>(.*)</body>}m
       end
+      exception.http_body =~ msg_matcher
+      msg = Regexp.last_match(1)
+      msg ||= exception.http_body
       raise err, msg
     end
 
-    # create the faraday connection object
-    def create_connection(pw)
-      Faraday.new(@rest_url, ssl: @ssl_options) do |cnx|
-        cnx.basic_auth @user, pw
-        cnx.options[:timeout] = @timeout
-        cnx.options[:open_timeout] = @open_timeout
-        cnx.adapter Faraday::Adapter::NetHttp
-      end
-    end
+    # RestClient::Resource#delete doesn't take an HTTP payload,
+    # but some JSS API resources require it (notably, logflush).
+    #
+    # This method uses RestClient::Request#execute
+    # to do the same thing that RestClient::Resource#delete does, but
+    # adding the payload.
+    #
+    # @param rsrc[String] the sub-resource we're DELETEing
+    #
+    # @param payload[String] The XML to be passed with the DELETE
+    #
+    # @param additional_headers[Type] See RestClient::Request#execute
+    #
+    # @param &block[Type] See RestClient::Request#execute
+    #
+    # @return [String] the XML response from the server.
+    #
+    def delete_with_payload(rsrc, payload, additional_headers = {}, &block)
+      headers = (@cnx.options[:headers] || {}).merge(additional_headers)
+      @last_http_response = RestClient::Request.execute(
+        @cnx.options.merge(
+          method: :delete,
+          url: @cnx[rsrc].url,
+          payload: payload,
+          headers: headers
+        ),
+        &(block || @block)
+      )
+    rescue RestClient::ExceptionWithResponse => e
+      handle_http_error e
+    end # delete_with_payload
 
   end # class APIConnection
-
-  # JSS MODULE METHODS
-  ######################
 
   # Create a new APIConnection object and use it for all
   # future API calls. If connection options are provided,
@@ -967,8 +1202,8 @@ module JSS
   # @return [APIConnection] the new, active connection
   #
   def self.new_api_connection(args = {})
-    args[:name] ||= :default
     @api = APIConnection.new args
+    @api
   end
 
   # Switch the connection used for all API interactions to the
@@ -983,7 +1218,6 @@ module JSS
   #
   def self.use_api_connection(connection)
     raise 'API connections must be instances of JSS::APIConnection' unless connection.is_a? JSS::APIConnection
-
     @api = connection
   end
 
@@ -992,7 +1226,7 @@ module JSS
   # @return [void]
   #
   def self.use_default_connection
-    use_api_connection @api
+    use_api_connection API
   end
 
   # The currently active JSS::APIConnection instance.
@@ -1000,7 +1234,7 @@ module JSS
   # @return [JSS::APIConnection]
   #
   def self.api
-    @api ||= APIConnection.new name: :default
+    @api
   end
 
   # aliases of module methods
@@ -1020,7 +1254,7 @@ module JSS
   end
 
   # create the default connection
-  new_api_connection unless @api
+  new_api_connection(name: :default) unless @api
 
   # Save the default connection in the API constant,
   # mostly for backward compatibility.

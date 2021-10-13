@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
 #    with the following modification; you may not use this file except in
@@ -53,6 +53,9 @@ module JSS
     # The hash key used for the JSON object output.
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :webhook
+
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:event, :contact_type, :url, :enabled].freeze
 
     # the content types available for webhooks, internally we use Symbols,
     # but the API wants the proper MIME strings

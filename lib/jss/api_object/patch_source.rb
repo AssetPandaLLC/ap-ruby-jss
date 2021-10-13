@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -120,31 +120,30 @@ module JSS
 
     # Fetch either an internal or external patch source
     #
-    # BUG: there's an API bug: fetching a non-existent
+    # BUG: there's an API bug: fetching a non-existent ids
     # which is why we rescue internal server errors.
     #
     # @see APIObject.fetch
     #
-    def self.fetch(searchterm = nil, **args)
+    def self.fetch(arg, api: JSS.api)
       if self == JSS::PatchSource
         begin
-          fetched = JSS::PatchInternalSource.fetch searchterm, **args
-        rescue
+          fetched = JSS::PatchInternalSource.fetch arg, api: api
+        rescue RestClient::ResourceNotFound, RestClient::InternalServerError, JSS::NoSuchItemError
           fetched = nil
         end
         unless fetched
           begin
-            fetched = JSS::PatchExternalSource.fetch searchterm, **args
-          rescue
+            fetched = JSS::PatchExternalSource.fetch arg, api: api
+          rescue RestClient::ResourceNotFound, RestClient::InternalServerError, JSS::NoSuchItemError
             raise JSS::NoSuchItemError, 'No matching PatchSource found'
           end
         end
         return fetched
       end # if self == JSS::PatchSource
-
       begin
-        super searchterm, **args
-      rescue JSS::NoSuchItemError
+        super
+      rescue RestClient::ResourceNotFound, RestClient::InternalServerError, JSS::NoSuchItemError
         raise JSS::NoSuchItemError, "No matching #{self::RSRC_OBJECT_KEY} found"
       end
     end
@@ -212,7 +211,7 @@ module JSS
       begin
         # TODO: remove this and adjust parsing when jamf fixes the JSON
         raw = JSS::XMLWorkaround.data_via_xml(rsrc, AVAILABLE_TITLES_DATA_MAP, api)
-      rescue JSS::NoSuchItemError
+      rescue RestClient::ResourceNotFound
         return []
       end
 

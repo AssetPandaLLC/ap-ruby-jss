@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -53,6 +53,13 @@ module JSS
     include JSS::Creatable
     include JSS::Sitable
 
+    # Class Methods
+    #####################################
+
+    def self.all_invitations(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |ci| ci[:invitation]  }
+    end
+
     # Class Constants
     #####################################
 
@@ -66,9 +73,12 @@ module JSS
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :computer_invitation
 
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:invitation].freeze
+
     # See JSS::APIObject
     OTHER_LOOKUP_KEYS = {
-      invitation: { fetch_rsrc_key: :invitation }
+      invitation: {rsrc_key: :invitation, list: :all_invitations}
     }.freeze
 
     # the object type for this object in

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -100,40 +100,17 @@ module JSS
     # Where is the Site data in the API JSON?
     SITE_SUBSET = :general
 
-    # these keys,  as well as :id and :name, can be used to look up objects
-    # of this class in the JSS
-    # the wierd alises wifi_mac_addresse,  mac_addresse and macaddresse
-    # are for proper pluralization of 'mac_address' and such
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = %i[device_name capacity tethered].freeze
+
+    # these keys,  as well as :id and :name, can be used to look up objects of this class in the JSS
     OTHER_LOOKUP_KEYS = {
-      udid: {
-        aliases: [:uuid, :guid],
-        fetch_rsrc_key: :udid
-      },
-      serial_number: {
-        aliases: [:serialnumber, :sn],
-        fetch_rsrc_key: :serialnumber
-      },
-      wifi_mac_address: {
-        aliases: [
-          :wifi_mac_addresse,
-          :mac_address,
-          :mac_addresse,
-          :macaddress,
-          :macaddresse,
-          :macaddr
-        ],
-        fetch_rsrc_key: :macaddress
-      }
+      udid: { rsrc_key: :udid, list: :all_udids },
+      serialnumber: { rsrc_key: :serialnumber, list: :all_serial_numbers },
+      serial_number: { rsrc_key: :serialnumber, list: :all_serial_numbers },
+      macaddress: { rsrc_key: :macaddress, list: :all_wifi_mac_addresses },
+      mac_address: { rsrc_key: :macaddress, list: :all_wifi_mac_addresses }
     }.freeze
-
-    HW_PREFIX_TV = 'AppleTV'.freeze
-    HW_PREFIX_IPAD = 'iPad'.freeze
-    HW_PREFIX_IPHONE = 'iPhone'.freeze
-
-    NON_UNIQUE_NAMES = true
-
-    # file uploads can send attachments to the JSS using :mobiledevices as the sub-resource.
-    UPLOAD_TYPES = { attachment: :mobiledevices }.freeze
 
     # This class lets us seach for computers
     SEARCH_CLASS = JSS::AdvancedMobileDeviceSearch
@@ -152,9 +129,29 @@ module JSS
     # Class Methods
     #####################################
 
+    # @return [Array<String>] all mobiledevice serial_numbers
+    def self.all_serial_numbers(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:serial_number] }
+    end
+
     # @return [Array<String>] all mobiledevice phone numbers
     def self.all_phone_numbers(refresh = false, api: JSS.api)
       all(refresh, api: api).map { |i| i[:phone_number] }.reject(&:empty?)
+    end
+
+    # @return [Array<String>] all mobiledevice wifi mac addrs
+    def self.all_wifi_mac_addresses(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:wifi_mac_address] }
+    end
+
+    # @return [Array<String>] all mobiledevice wifi mac addrs
+    def self.all_mac_addresses(refresh = false, api: JSS.api)
+      all_wifi_mac_addresses(refresh, api: api)
+    end
+
+    # @return [Array<String>] all mobiledevice udids
+    def self.all_udids(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |i| i[:udid] }
     end
 
     # @return [Array<Hash>] the list of all managed mobile devices
@@ -496,19 +493,6 @@ module JSS
       end
     end # initialize
 
-    def tv?
-      model_identifier.start_with? HW_PREFIX_TV
-    end
-    alias apple_tv? tv?
-
-    def ipad?
-      model_identifier.start_with? HW_PREFIX_IPAD
-    end
-
-    def iphone?
-      model_identifier.start_with? HW_PREFIX_IPHONE
-    end
-
     def name=(new_name)
       super
       @needs_mdm_name_change = true if managed? && supervised?
@@ -517,32 +501,29 @@ module JSS
     #
     def serial_number=(new_val)
       return nil if new_val == @serial_number
-      @serial_number =  new_val.empty? ? new_val : JSS::Validate.doesnt_already_exist(self.class, :serial_number, new_val, api: api)
+      @serial_number =  new_val.empty? ? new_val : JSS::Validate.unique_identifier(self.class, :serial_number, new_val, api: api)
       @need_to_update = true
     end
 
     #
     def udid=(new_val)
       return nil if new_val == @udid
-      @udid = new_val.empty? ? new_val : JSS::Validate.doesnt_already_exist(self.class, :udid, new_val, api: api)
+      @udid = new_val.empty? ? new_val : JSS::Validate.unique_identifier(self.class, :udid, new_val, api: api)
       @need_to_update = true
     end
 
     #
     def asset_tag=(new_val)
-      new_val = new_val.strip
       return nil if @asset_tag == new_val
-
+      new_val.strip!
       @asset_tag = new_val
       @need_to_update = true
     end
 
-    # @param no_mdm_rename[Boolean] should a MDM `set device name` command be sent
-    #   if the device is managed and supervised?
-    def update(no_mdm_rename: false)
-      super()
-      return @id if no_mdm_rename || !@needs_mdm_name_change
-
+    #
+    def update
+      super
+      return @id unless @needs_mdm_name_change
       set_device_name @name if managed? && supervised?
       @needs_mdm_name_change = false
       @id

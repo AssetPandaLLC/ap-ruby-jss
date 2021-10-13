@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -84,7 +84,7 @@ module JSS
     # groups.
     #
     def self.all_static(refresh = false, api: JSS.api)
-      all(refresh, api: api).reject { |g| g[:is_smart] }
+      all(refresh, api: api).select { |g| (g[:is_smart]) }
     end
 
     # Immediatly add and/or remove members in a static group without
@@ -105,7 +105,7 @@ module JSS
     # @return [void]
     #
     def self.change_membership(group, add_members: [], remove_members: [], api: JSS.api)
-      raise JSS::NoSuchItemError, "No #{self} matching '#{group}'" unless (group_id = valid_id group, api: api)
+      raise JSS::NoSuchItemError, "No #{self} matching '#{ident}'" unless (group_id = valid_id group, api: api)
       raise JSS::UnsupportedError, "Not a static group, can't change membership directly" if map_all_ids_to(:is_smart, api: api)[group_id]
 
       add_members = [add_members].flatten
@@ -210,7 +210,7 @@ module JSS
     #####################################
 
     # When creating a new group in the JSS, you must call .make with a :type key
-    # and a value of :smart or :static, as well as a :name
+    # and a value of :smart or :static, as well as a :name and the :id => :new
     #
     # @see JSS::APIObject
     #
@@ -236,59 +236,21 @@ module JSS
 
     # @see Creatable#create
     #
-    # @param calculate_members [Boolan] should the local membership list be
-    #   re-read from the API after the group is created?
-    #
-    # @param retries [Integer] If calculate_members is true, refetching the
-    #   group to re-read the membership can happen too fast, the JSS won't know
-    #   it exists yet and will throw a NoSuchItem error.  If that
-    #   happens, try again this many times with a 1 second pause between attempts.
-    #
-    def create(calculate_members: true, retries: 10)
+    def create(calculate_members: true)
       if @is_smart
         raise JSS::MissingDataError, 'No criteria specified for smart group' unless @criteria
       end
       super()
-
-      if calculate_members
-        tries = 0
-        while tries < retries
-          begin
-            refresh_members
-            break
-          rescue
-            sleep 1
-            tries += 1
-          end # begin
-        end # while
-      end # if calc members
-
+      refresh_members if calculate_members
       @id
     end
 
     # @see Updatable#update
     #
-    def update(refresh: true)
-      super()
-      refresh_members if refresh
+    def update
+      super
+      refresh_members
       @id
-    end
-
-    # Wrapper/alias for both create and update
-    def save(**params)
-      params[:calculate_members] = true if params[:calculate_members].nil?
-      params[:retries] = 10 if params[:retries].nil?
-      params[:refresh] = true if params[:refresh].nil?
-
-      if @in_jss
-        raise JSS::UnsupportedError, 'Updating this object in the JSS is currently not supported by ruby-jss' unless updatable?
-
-
-        update refresh: params[:refresh]
-      else
-        raise JSS::UnsupportedError, 'Creating this object in the JSS is currently not supported by ruby-jss' unless creatable?
-        create calculate_members: params[:calculate_members], retries: params[:retries]
-      end
     end
 
     # @see APIObject#delete
@@ -307,39 +269,7 @@ module JSS
     #
     def criteria=(new_criteria)
       raise InvalidDataError, 'Only smart groups have criteria.' unless @is_smart
-
       super
-    end
-
-    # Change static group to smart group
-    #
-    # @param args[Hash] the options and settings use for switching the computer group from static group to smart group
-    #
-    # @option args criteria[Array] The criterias to be user for the smart group
-    def set_smart(*params)
-      return if @is_smart
-
-      params[:criteria] = [] if params[:criteria].nil?
-
-      criteria = params[:criteria]
-
-      @is_smart = true
-      @need_to_update = true
-    end
-
-    # Change smart group to static group
-    #
-    # @param args[Hash] the options and settings use for switching the computer group from smart group to static group
-    #
-    # @option args preserve_members[Boolean] Should the smart group preserve it's current members?
-    def set_static(*params)
-      return unless @is_smart
-
-      preserve_members = params.include? :preserve_members
-
-      @is_smart = false
-
-      clear() unless preserve_members
     end
 
     # How many members of the group?

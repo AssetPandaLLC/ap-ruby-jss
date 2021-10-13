@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -198,7 +198,7 @@ module JSS
 
       if cat.is_a? String
         @category_name = cat
-        @category_id = JSS::Category.category_id_from_name @category_name, api: @api
+        @category_id = JSS::Category.category_id_from_name @category_name
       else
         @category_name = cat[:name]
         @category_id = cat[:id]

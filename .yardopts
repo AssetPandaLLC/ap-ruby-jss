@@ -1,0 +1,7 @@
+--title "ruby-jss: access to the Jamf Pro 'Classic' API"
+--readme README.md
+--embed-mixins
+-
+LICENSE.txt
+CHANGES.md
+THANKS.md

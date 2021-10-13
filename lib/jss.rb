@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -54,12 +54,11 @@ module JSS
   require 'open3'
   require 'English'
   require 'json'
-  require 'digest'
 
   ###################
   ### Gems
-  require 'faraday'
-  require 'faraday_middleware'
+  require 'rest-client'
+  require 'plist'
   require 'immutable-struct'
   require 'recursive-open-struct'
 
@@ -92,9 +91,6 @@ module JSS
   ### Module Methods
   #####################################
 
-  # TODO: Find a better way to do all this - possibly with
-  # autoloading.
-
   ### Define classes and submodules here so that they don't
   ### generate errors when referenced during the loading of
   ### the library.
@@ -105,68 +101,31 @@ module JSS
 
   module Composer; end
 
-  ### Mix-in Sub Modules
-
-  module Creatable; end
-  module FileUpload; end
-  module Locatable; end
-  module Matchable; end
-  module Purchasable; end
-  module Updatable; end
-  module Extendable; end
-  module SelfServable; end
-  module Categorizable; end
-  module VPPable; end
-  module Sitable; end
-  module MDM; end
-  module ManagementHistory; end
-
   ### Mix-in Sub Modules with Classes
 
   module Criteriable
-
     class Criteria; end
     class Criterion; end
-
   end
-
   module Scopable
-
-    class Scope; end
-
+    class Scope ; end
   end
 
   ### Classes
   #####################################
 
+  class APIObject; end
   class APIConnection; end
   class DBConnection; end
   class Server; end
   class Icon; end
   class Preferences; end
-  # TODO: see if this can be made into a module:
-  class Client; end
+  class Client; end # TODO: see if this can be made into a module.
 
-  # Parent of all fetchable objects.
-  #
-  class APIObject
-
-    # Builtin ruby callback, whenver a subclass is created.
-    #
-    # Just store the subclass name, at the end of all the requires, we'll
-    # call define_identifier_list_methods on everything we stored here.
-    #
-    def self.inherited(subclass)
-      @subclasses ||= []
-      @subclasses << subclass
-    end
-
-  end # class APIObject
-
-  ### APIObject SubClasses
+  ### SubClasses
   #####################################
 
-  ### APIObject SubClasses with SubClasses
+  ### APIObject Classes with SubClasses
 
   class AdvancedSearch < JSS::APIObject; end
   class AdvancedComputerSearch < JSS::AdvancedSearch; end
@@ -187,19 +146,16 @@ module JSS
   class OSXConfigurationProfile < JSS::ConfigurationProfile; end
   class MobileDeviceConfigurationProfile < JSS::ConfigurationProfile; end
 
-  ### APIObject SubClasses without SubClasses
+  ### APIObject Classes without SubClasses
 
   class Account < JSS::APIObject; end
   class Building < JSS::APIObject; end
   class Category < JSS::APIObject; end
   class Computer < JSS::APIObject; end
   class Department < JSS::APIObject; end
-  class DistributionPoint < JSS::APIObject; end
   class EBook < JSS::APIObject; end
-  class IBeacon < JSS::APIObject; end
-  class DockItem < JSS::APIObject; end
+  class DistributionPoint < JSS::APIObject; end
   class LDAPServer < JSS::APIObject; end
-  class DirectoryBinding < JSS::APIObject; end
   class MacApplication < JSS::APIObject; end
   class MobileDevice < JSS::APIObject; end
   class MobileDeviceApplication < JSS::APIObject; end
@@ -217,6 +173,23 @@ module JSS
   class SoftwareUpdateServer < JSS::APIObject; end
   class User < JSS::APIObject; end
   class WebHook < JSS::APIObject; end
+
+  ### Mix-in Sub Modules
+
+  module Creatable; end
+  module FileUpload; end
+  module Locatable; end
+  module Matchable; end
+  module Purchasable; end
+  module Updatable; end
+  module Extendable; end
+  module SelfServable; end
+  module Categorizable; end
+  module VPPable; end
+  module Sitable; end
+  module MDM; end
+  module ManagementHistory; end
+
 
 end # module JSS
 

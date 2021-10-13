@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -252,23 +252,8 @@ module JSS
     def self.all_for_title(title, api: JSS.api)
       title_id = JSS::PatchTitle.valid_id title
       raise JSS::NoSuchItemError, "No PatchTitle matching '#{title}'" unless title_id
-
       api.get_rsrc("#{RSRC_BY_PATCH_TITLE}#{title_id}")[RSRC_BY_PATCH_TITLE_LIST_KEY]
     end
-
-    # Override APIObject.fetch, since there's no .../patchpolicies/name/... endpoint
-    # @see APIObject#fetch
-    #
-    def self.fetch(searchterm = nil, **args)
-      name_search = args.delete :name
-      if name_search
-        id = valid_id name_search
-        raise JSS::NoSuchItemError, "No #{self::RSRC_OBJECT_KEY} found #{err_detail}" unless id
-
-        args[:id] = id
-      end
-      super
-    end # fetch
 
     # Attributes
     ################################
@@ -525,7 +510,7 @@ module JSS
       # TODO: prepare for more cases where the POST rsrc is
       # different from the PUT/GET/DELETE.
       orig_rsrc = @rest_rsrc
-      @rest_rsrc = "#{RSRC_BY_PATCH_TITLE}#{CGI.escape patch_title_id.to_s}"
+      @rest_rsrc = "#{RSRC_BY_PATCH_TITLE}#{patch_title_id}"
       super
       @rest_rsrc = orig_rsrc
       refetch_version_info

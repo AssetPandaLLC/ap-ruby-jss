@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -69,6 +69,8 @@ module JSS
     ### It's also used in various error messages
     RSRC_OBJECT_KEY = :peripheral_type
 
+    ### these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:fields]
 
     ### field types can be one of these, either String or Symbol
     FIELD_TYPES = [:text, :menu]

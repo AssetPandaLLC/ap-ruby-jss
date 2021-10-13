@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -81,7 +81,7 @@ module JSS
       raise JSS::AlreadyExistsError, "A #{self.class::RSRC_OBJECT_KEY} named '#{newname}' already exsists in the JSS" \
         if self.class.all_names(:refresh, api: @api).include? newname
       @name = newname
-      @rest_rsrc = "#{self.class::RSRC_BASE}/name/#{CGI.escape @name.to_s}" if @rest_rsrc.include? '/name/'
+      @rest_rsrc = "#{self.class::RSRC_BASE}/name/#{CGI.escape @name}" if @rest_rsrc.include? '/name/'
       @need_to_update = true
     end #  name=(newname)
 
@@ -93,15 +93,9 @@ module JSS
       return nil unless @need_to_update
       raise JSS::UnsupportedError, "Editing #{self.class::RSRC_LIST_KEY} isn't yet supported. Please use other Casper workflows." unless updatable?
       raise JSS::NoSuchItemError, "Not In JSS! Use #create to create this #{self.class::RSRC_OBJECT_KEY} in the JSS before updating it." unless @in_jss
-
       @api.put_rsrc @rest_rsrc, rest_xml
       @need_to_update = false
       refresh_icon if self_servable?
-
-      # clear any cached all-lists or id-maps for this class
-      # so they'll re-cache as needed
-      @api.flushcache self.class::RSRC_LIST_KEY
-
       @id
     end # update
 

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -54,19 +54,27 @@ module JSS
   ###
   module Scopable
 
+    #####################################
     ###  Constants
     #####################################
 
     SCOPABLE = true
 
+    #####################################
+    ###  Variables
+    #####################################
+
+    #####################################
     ###  Attribtues
     #####################################
 
     attr_reader :scope
 
+    #####################################
     ###  Mixed-in Instance Methods
     #####################################
 
+    ###
     ### @api private
     ###
     ### Call this during initialization of objects that have a scope
@@ -79,6 +87,8 @@ module JSS
       @scope.container = self
     end
 
+
+    ###
     ### Change the scope
     ###
     ### @param new_scope[JSS::Scopable::Scope] the new scope
@@ -92,6 +102,7 @@ module JSS
       @need_to_update = true
     end
 
+    ###
     ### When the scope changes, it calls this to tell us that an update is needed.
     ###
     ### @return [void]
@@ -100,17 +111,23 @@ module JSS
       @need_to_update = true if @in_jss
     end
 
-    # A wrapper around the update method, to try catching 409 conflict errors
-    # when we couldn't verify all ldap users/groups due to lack of ldap connections
-    #
+
+    ###
+    ### A wrapper around the update method, to try catching RestClient::Conflict
+    ### 409 errors when we couldn't verify all ldap users/groups due to lack of ldap connections
+    ###
     def update
-      super
-    rescue JSS::ConflictError => conflict
-      if scope.unable_to_verify_ldap_entries == true
-        raise JSS::InvalidDataError, "Potentially non-existant LDAP user or group in new scope values."
-      else
-        raise conflict
-      end
+      begin
+        super
+
+      rescue RestClient::Conflict => conflict
+        if  self.scope.unable_to_verify_ldap_entries == true
+          raise JSS::InvalidDataError, "Potentially non-existant LDAP user or group in new scope values."
+        else
+          raise conflict
+        end
+
+      end # begin
     end # update
 
   end # module Scopable

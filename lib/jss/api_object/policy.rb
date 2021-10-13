@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -92,26 +92,8 @@ module JSS
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :policy
 
-    # subsets available for fetching
-    # TODO: FilesProcesses and Maintenance don't seem to work
-    SUBSETS = %i[
-      general
-      scope
-      selfservice
-      self_service
-      packages
-      scripts
-      printers
-      dockitems
-      dock_items
-      reboot
-      userinteraction
-      user_interaction
-      disk_encryption
-      diskencryption
-      accountmaintenance
-      account_maintenance
-    ].freeze
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = %i[scope user_interaction files_processes].freeze
 
     # policies can take uploaded icons
     UPLOAD_TYPES = { icon: :policies }.freeze
@@ -142,16 +124,9 @@ module JSS
       ongoing: 'Ongoing',
       once_per_computer: 'Once per computer',
       once_per_user: 'Once per user',
-      once_per_user_per_computer: 'Once per user per computer',
       daily: 'Once every day',
       weekly: 'Once every week',
       monthly: 'Once every month'
-    }.freeze
-
-    RETRY_EVENTS = {
-      none: 'none',
-      checkin: 'check-in',
-      trigger: 'trigger'
     }.freeze
 
     RESTART_WHEN = {
@@ -180,9 +155,7 @@ module JSS
       change_pw: 'specified',
       generate_pw: 'random',
       enable_fv2: 'fileVaultEnable',
-      disable_fv2: 'fileVaultDisable',
-      reset_random: 'resetRandom',
-      reset_pw: 'reset'
+      disable_fv2: 'fileVaultDisable'
     }.freeze
 
     PACKAGE_ACTIONS = {
@@ -199,13 +172,7 @@ module JSS
       after: 'After'
     }.freeze
 
-    DISK_ENCRYPTION_ACTIONS = {
-      apply: "apply",
-      remediate: "remediate",
-      none: "none"
-    }
-
-    PRINTER_ACTIONS = {
+    PRINTER_ACTIIONS = {
       map: 'install',
       unmap: 'uninstall'
     }.freeze
@@ -263,14 +230,14 @@ module JSS
     }.freeze
 
     LOG_FLUSH_INTERVAL_PERIODS = {
-      day: 'Days',
-      days: 'Days',
-      week: 'Weeks',
-      weeks: 'Weeks',
-      month: 'Months',
-      months: 'Months',
-      year: 'Years',
-      years: 'Years'
+      day: 'Day',
+      days: 'Day',
+      week: 'Week',
+      weeks: 'Week',
+      month: 'Month',
+      months: 'Month',
+      year: 'Year',
+      years: 'Year'
     }.freeze
 
     # the object type for this object in
@@ -286,86 +253,6 @@ module JSS
 
     # How is the category stored in the API data?
     CATEGORY_DATA_TYPE = Hash
-
-    # All valid script parameters
-    SCRIPT_PARAMETERS_AVAILABLE = %i[parameter4 parameter5 parameter6 parameter7 parameter8 parameter9 parameter10 parameter11].freeze
-
-    # Class Methods
-    ######################
-
-    # Flush logs for a given policy older than some number of days, weeks,
-    # months or years, possibly limited to one or more computers.
-    #
-    # With no parameters, flushes all logs for the policy for all computers.
-    #
-    # NOTE: Currently the API doesn't have a way to flush only failed policies.
-    #
-    # WARNING: Log flushing can take a long time, and the API call doesnt return
-    # until its finished. The connection timeout will be temporarily raised to
-    # 30 minutes, unless it's already higher.
-    #
-    # @param policy[Integer,String] The id or name of the policy to flush
-    #
-    # @param older_than[Integer] 0, 1, 2, 3, or 6
-    #
-    # @param period[Symbol] :days, :weeks, :months, or :years
-    #
-    # @param computers[Array<Integer,String>] Identifiers of the target computers
-    #   either ids, names, SNs, macaddrs, or UDIDs. If omitted, flushes logs for
-    #   all computers
-    #
-    # @param api [JSS::APIConnection] the API  connection to use.
-    #
-    # @return [void]
-    #
-    def self.flush_logs(policy, older_than: 0, period: :days, computers: [], api: JSS.api)
-      orig_timeout = api.cnx.options.timeout
-      pol_id = valid_id policy
-      raise JSS::NoSuchItemError, "No Policy identified by '#{policy}'." unless pol_id
-
-      older_than = LOG_FLUSH_INTERVAL_INTEGERS[older_than]
-      raise JSS::InvalidDataError, "older_than must be one of these integers: #{LOG_FLUSH_INTERVAL_INTEGERS.keys.join ', '}" unless older_than
-
-      period = LOG_FLUSH_INTERVAL_PERIODS[period]
-      raise JSS::InvalidDataError, "period must be one of these symbols: :#{LOG_FLUSH_INTERVAL_PERIODS.keys.join ', :'}" unless period
-
-      computers = [computers] unless computers.is_a? Array
-
-      # log flushes can be really slow
-      api.timeout = 1800 unless orig_timeout && orig_timeout > 1800
-
-      return api.delete_rsrc "#{LOG_FLUSH_RSRC}/policy/id/#{pol_id}/interval/#{older_than}+#{period}" if computers.empty?
-
-      flush_logs_for_specific_computers pol_id, older_than, period, computers, api
-    ensure
-      api.timeout = orig_timeout
-    end
-
-    # use an XML body in a DELETE request to flush logs for
-    # a list of computers - used by the flush_logs class method
-    def self.flush_logs_for_specific_computers(pol_id, older_than, period, computers, api)
-      # build the xml body for a DELETE request
-      xml_doc = REXML::Document.new JSS::APIConnection::XML_HEADER
-      lf = xml_doc.add_element 'logflush'
-      lf.add_element('log').text = 'policy'
-      lf.add_element('log_id').text = pol_id.to_s
-      lf.add_element('interval').text = "#{older_than} #{period}"
-      comps_elem = lf.add_element 'computers'
-      computers.each do |c|
-        id = JSS::Computer.valid_id c
-        next unless id
-
-        ce = comps_elem.add_element 'computer'
-        ce.add_element('id').text = id.to_s
-      end
-
-      # Do a DELETE request with a body.
-      api.cnx.delete(LOG_FLUSH_RSRC) do |req|
-        req.headers[JSS::APIConnection::HTTP_CONTENT_TYPE_HEADER] = JSS::APIConnection::MIME_XML
-        req.body = xml_doc.to_s
-      end
-    end
-    private_class_method :flush_logs_for_specific_computers
 
     # Attributes
     ######################
@@ -635,7 +522,6 @@ module JSS
 
     # @return [String] the message shown the user at policy end
     attr_reader :user_message_finish
-    alias user_message_end user_message_finish
 
     # @return [Hash]
     #
@@ -659,6 +545,7 @@ module JSS
     #  :search_by_path => "/this/is/a/path",
     #  :kill_process => true,
     #  :delete_file => true,
+    #  :run_command => "/usr/local/pixar/sbin/force-fde-logout  --setup",
     #  :locate_file => "this-is-a-filename",
     #  :update_locate_database => true}
     #
@@ -698,6 +585,7 @@ module JSS
 
       if @in_jss
         gen = @init_data[:general]
+        @frequency = gen[:frequency]
         @target_drive = gen[:target_drive]
         @offline = gen[:offline]
         @enabled = gen[:enabled]
@@ -713,10 +601,6 @@ module JSS
           trigger_enrollment_complete: gen[:trigger_enrollment_complete],
           trigger_other: gen[:trigger_other]
         }
-        @frequency = gen[:frequency]
-        @retry_event = gen[:retry_event]
-        @retry_attempts = gen[:retry_attempts]
-        @notify_failed_retries = gen[:notify_on_each_failed_retry]
 
         dtl = gen[:date_time_limitations]
 
@@ -767,7 +651,6 @@ module JSS
         @disk_encryption = @init_data[:disk_encryption]
 
         @printers = @init_data[:printers]
-        @printers.shift
 
         # Not in jss yet
       end
@@ -833,93 +716,8 @@ module JSS
     # @return [void]
     #
     def frequency=(freq)
-      raise JSS::InvalidDataError, "New frequency must be one of :#{FREQUENCIES.keys.join ', :'}" unless FREQUENCIES.key?(freq) || FREQUENCIES.value?(freq)
-
-      freq = freq.is_a?(Symbol) ? FREQUENCIES[freq] : freq
-      return if freq == @frequency
-
-      @frequency = freq
-      @need_to_update = true
-    end
-
-    # @return [String] The event that causes a policy retry
-    def retry_event
-      return RETRY_EVENTS[:none] unless FREQUENCIES[:once_per_computer] == @frequency
-
-      @retry_event
-    end
-
-    # Set the event that causes a retry if the policy fails.
-    # One of the ways to turn off policy retry is to set this to :none
-    # The other is to set the retry_attempts to 0
-    #
-    # @param [Symbol, String] A key or value from RETRY_EVENTS
-    # @return [void]
-    #
-    def retry_event=(evt)
-      validate_retry_opt
-      raise JSS::InvalidDataError, "Retry event must be one of :#{RETRY_EVENTS.keys.join ', :'}" unless RETRY_EVENTS.key?(evt) || RETRY_EVENTS.value?(evt)
-
-      evt = evt.is_a?(Symbol) ? RETRY_EVENTS[evt] : evt
-      return if evt == @retry_event
-
-      # if the event is not 'none' and attempts is <= 0,
-      # set events to 1, or the API won't accept it
-      unless evt == RETRY_EVENTS[:none]
-        @retry_attempts = 1 unless @retry_attempts.positive?
-      end
-
-      @retry_event = evt
-      @need_to_update = true
-    end
-
-    # @return [Integer] How many times wil the policy be retried if it fails.
-    #   -1 means no retries,  otherwise, an integer from 1 to 10
-    def retry_attempts
-      return 0 unless FREQUENCIES[:once_per_computer] == @frequency
-
-      @retry_attempts
-    end
-
-    # Set the number of times to retry if the policy fails.
-    # One of the ways to turn off policy retry is to set this to 0 or -1
-    # The other is to set retry_event to :none
-    #
-    # @param [Integer] From -1 to 10
-    # @return [void]
-    #
-    def retry_attempts=(int)
-      validate_retry_opt
-      raise JSS::InvalidDataError, 'Retry attempts must be an integer from 0-10' unless int.is_a?(Integer) && (-1..10).include?(int)
-
-      # if zero or -1, turn off retries
-      if int <= 0
-        @retry_event = RETRY_EVENTS[:none]
-        int = -1
-      end
-      return if @retry_attempts == int
-
-      @retry_attempts = int
-      @need_to_update = true
-    end
-
-    # @return [Boolean] Should admins be notified of failed retry attempts
-    def notify_failed_retries?
-      return false unless FREQUENCIES[:once_per_computer] == @frequency
-
-      @notify_failed_retries
-    end
-    alias notify_failed_retries notify_failed_retries?
-    alias notify_on_each_failed_retry notify_failed_retries?
-
-    # @param bool[Boolean] Should admins be notified of failed retry attempts
-    # @return [void]
-    def notify_failed_retries=(bool)
-      validate_retry_opt
-      bool = JSS::Validate.boolean bool
-      return if @notify_failed_retries == bool
-
-      @notify_failed_retries = bool
+      raise JSS::InvalidDataError, "New frequency must be one of :#{FREQUENCIES.keys.join ', :'}" unless FREQUENCIES.key?(freq)
+      @frequency = FREQUENCIES[freq]
       @need_to_update = true
     end
 
@@ -1097,30 +895,6 @@ module JSS
     end
     alias message= reboot_message=
 
-    # Set User Start Message
-    #
-    # @param user_message[String] Text of User Message
-    #
-    # @return [void] description of returned object
-    def user_message_start=(message)
-      raise JSS::InvalidDataError, 'User message must be a String' unless message.is_a? String
-      @user_message_start = message
-      @need_to_update = true
-    end
-
-    # Set User Finish Message
-    #
-    # @param user_message[String] Text of User Message
-    #
-    # @return [void] description of returned object
-    def user_message_end=(message)
-      raise JSS::InvalidDataError, 'User message must be a String' unless message.is_a? String
-      @user_message_finish = message
-      @need_to_update = true
-    end
-
-    alias user_message_finish= user_message_end=
-
     # Set Startup Disk
     # Only Supports 'Specify Local Startup Disk' at the moment
     #
@@ -1258,11 +1032,7 @@ module JSS
     # @return [Pathname] The path to search for
     #
     def search_by_path
-      if @files_processes[:search_by_path].nil?
-        return nil
-      else
-        Pathname.new @files_processes[:search_by_path]
-      end
+      Pathname.new @files_processes[:search_by_path]
     end
 
     # @return [Boolean] Should the searched-for path be deleted if found?
@@ -1387,7 +1157,7 @@ module JSS
 
     # Remove a package from this policy by name or id
     #
-    # @param identifier [String,Integer] the name or id of the package to remove
+    # @param identfier [String,Integer] the name or id of the package to remove
     #
     # @return [Array, nil] the new packages array or nil if no change
     #
@@ -1477,7 +1247,7 @@ module JSS
 
     # Remove a script from this policy by name or id
     #
-    # @param identifier [String,Integer] the name or id of the script to remove
+    # @param identfier [String,Integer] the name or id of the script to remove
     #
     # @return [Array, nil] the new scripts array or nil if no change
     #
@@ -1486,53 +1256,6 @@ module JSS
       @need_to_update = true if removed
       removed
     end
-
-    # Set a script parameter
-    #
-    # @param identifier [Integer,String] identifier the id or name of a script in this policy
-    #
-    # @param opts [Hash] opts the options to alter for this script
-    #
-    # @option [String] parameter4: the value of the 4th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter5: the value of the 5th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter6: the value of the 6th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter7: the value of the 7th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter8: the value of the 8th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter9: the value of the 9th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter10: the value of the 10th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @option [String] parameter11: the value of the 11th parameter passed to the script. this
-    #   overrides the same parameter in the script object itself.
-    #
-    # @return [Array] the scripts array
-    #
-    def set_script_parameters(identifier, **opts)
-      id = JSS::Script.valid_id identifier, api: @api
-      raise JSS::NoSuchItemError, "No script matches '#{identifier}'" unless id
-
-      script_data = @scripts.select { |s| s[:id] == id }[0]
-      raise JSS::InvalidDataError, "Script #{id} is not configured. Use add_script method." unless script_data
-
-      opts.each do |parameter, value|
-        script_data[parameter] = value if SCRIPT_PARAMETERS_AVAILABLE.include? parameter
-      end
-
-      @need_to_update = true
-      @scripts
-    end # end set_script_parameter
 
     ###### Directory Bindings
 
@@ -1544,49 +1267,6 @@ module JSS
     # @return [Array] the names of the directory_bindings handled by the policy
     def directory_binding_names
       @directory_bindings.map { |p| p[:name] }
-    end
-
-    # Add a Directory Bidning to the list of directory_bindings handled by this policy.
-    # If the directory binding already exists in the policy, nil is returned and
-    # no changes are made.
-    #
-    # @param [String,Integer] identifier the name or id of the directory binding to add to this policy
-    #
-    # @param position [Symbol, Integer] where to add this directory binding among the list of
-    #   directory_bindings. Zero-based, :start and 0 are the same, as are :end and -1.
-    #   Defaults to :end
-    #
-    # @return [Array, nil]  the new @directory_bindings array, nil if directory_binding was already in the policy
-    #
-    def add_directory_binding(identifier, **opts)
-      id = validate_directory_binding_opts identifier, opts
-
-      return nil if @directory_bindings.map { |s| s[:id] }.include? id
-
-      name = JSS::DirectoryBinding.map_all_ids_to(:name, api: @api)[id]
-
-      directory_binding_data = {
-        id: id,
-        name: name
-      }
-
-      @directory_bindings.insert opts[:position], directory_binding_data
-
-      @need_to_update = true
-      @directory_bindings
-    end
-
-
-    # Remove a directory binding from this policy by name or id
-    #
-    # @param identifier [String,Integer] the name or id of the directory binding to remove
-    #
-    # @return [Array, nil] the new directory bindings array or nil if no change
-    #
-    def remove_directory_binding(identifier)
-      removed = @directory_bindings.delete_if { |s| s[:id] == identifier || s[:name] == identifier }
-      @need_to_update = true if removed
-      removed
     end
 
     ###### Dock items
@@ -1601,226 +1281,16 @@ module JSS
       @dock_items.map { |p| p[:name] }
     end
 
-
     ###### Printers
-
-    # Add a specific printer object to the policy.
-    #
-    # @author Tyler Morgan
-    #
-    # @param newvalue [String,Integer] The name or the id of the printer to be added to this policy.
-    #
-    # @param position [Symbol, Integer] where to add this printer object among the list of printer
-    #   objects. Zero-based, :start and 0 are the same, as are :end and -1.
-    #   Defaults to :end
-    #
-    # @param action [Symbol] One of the PRINTER_ACTIONS symbols. What you want done with the printer object upon policy execution.
-    #
-    # @param make_default [TrueClass,FalseClass] Should this printer object be set to default.
-    #   Defaults to false
-    #
-    # @return [String] The new printers array or nil if the printer was already in the policy
-    def add_printer(identifier, **opts)
-      id = validate_printer_opts identifier, opts
-
-      return nil if @printers.map { |p| p[:id] }.include? id
-
-      name = JSS::Printer.map_all_ids_to(:name, api: @api)[id]
-
-      printer_data = {
-        id: id,
-        name: name,
-        action: PRINTER_ACTIONS[opts[:action]],
-        make_default: opts[:make_default]
-      }
-
-      @printers.insert opts[:position], printer_data
-
-      @need_to_update = true
-      @printers
-    end
-
-
-    # Remove a specific printer object from the policy.
-    #
-    # @author Tyler Morgan
-    #
-    # @param identifier [String,Integer] The name or id of the printer to be removed.
-    #
-    # @return [Array, nil] The new printers array or nil if no change.
-    def remove_printer(identifier)
-      removed = @printers.delete_if { |p| p[:id] == identifier || p[:name] == identifier }
-
-      @need_to_update = true
-      removed
-    end
-
-    # Add a dock item to the policy
-    def add_dock_item(identifier, action)
-      id = JSS::DockItem.valid_id identifier, api: @api
-
-      raise JSS::NoSuchItemError, "No Dock Item matches '#{identifier}'" unless id
-
-      raise JSS::InvalidDataError, "Action must be one of: :#{DOCK_ITEM_ACTIONS.keys.join ', :'}" unless DOCK_ITEM_ACTIONS.include? action
-
-      return nil if @dock_items.map { |d| d[:id] }.include? id
-
-      name = JSS::DockItem.map_all_ids_to(:name, api: @api)[id]
-
-      @dock_items << {id: id, name: name, action: DOCK_ITEM_ACTIONS[action]}
-
-      @need_to_update = true
-      @dock_items
-    end
-
-    # Remove a dock item from the policy
-    def remove_dock_item(identifier)
-      # TODO: Add validation against JSS::DockItem
-      removed = @dock_items.delete_if { |d| d[:id] == identifier || d[:name] == identifier }
-      @need_to_update = true if removed
-      removed
-    end
 
     # @return [Array] the id's of the printers handled by the policy
     def printer_ids
-        begin
-            @printers.map { |p| p[:id] }
-            rescue TypeError
-            return []
-        end
+      @printers.map { |p| p[:id] }
     end
 
     # @return [Array] the names of the printers handled by the policy
     def printer_names
-        begin
-            @printers.map { |p| p[:name] }
-            rescue TypeError
-            return []
-        end
-    end
-
-
-
-    ###### Disk Encryption
-
-    # Sets the Disk Encryption application to "Remediate" and sets the remediation key type to individual.
-    #
-    # @author Tyler Morgan
-    #
-    # @return [Void]
-    #
-    def reissue_key()
-      if @disk_encryption[:action] != DISK_ENCRYPTION_ACTIONS[:remediate]
-        # Setting New Action
-        hash = {
-          action: DISK_ENCRYPTION_ACTIONS[:remediate],
-          remediate_key_type: "Individual"
-        }
-
-        @disk_encryption = hash
-        @need_to_update = true
-
-      else
-        # Update
-        return
-      end
-
-    end
-
-
-    # Sets the Disk Encryption application to "Apply" and sets the correct disk encryption configuration ID using either the name or id.
-    #
-    # @author Tyler Morgan
-    #
-    # @return [Void]
-    #
-    def apply_encryption_configuration(identifier)
-
-      id = JSS::DiskEncryptionConfiguration.valid_id identifier
-
-      return if id.nil?
-
-      hash = {
-        action: DISK_ENCRYPTION_ACTIONS[:apply],
-        disk_encryption_configuration_id: id,
-        auth_restart: false
-      }
-
-      @disk_encryption = hash
-      @need_to_update = true
-    end
-
-
-    # Removes the Disk Encryption settings associated with this specific policy.
-    #
-    # @author Tyler Morgan
-    #
-    # @return [Void]
-    #
-    def remove_encryption_configuration()
-      hash = {
-        action: DISK_ENCRYPTION_ACTIONS[:none]
-      }
-
-      @disk_encryption = hash
-      @need_to_update = true
-    end
-
-    # Interact with management account settings
-    #
-    # @param action [Key] one of the MGMT_ACCOUNT_ACTIONS keys
-    #
-    # @return The current specified management settings.
-    #
-    # Reference: https://developer.jamf.com/documentation#resources-with-passwords
-    #
-    def set_management_account(action, **opts)
-      # TODO: Add proper error handling
-      raise JSS::InvalidDataError, "Action must be one of: :#{MGMT_ACCOUNT_ACTIONS.keys.join ', :'}" unless MGMT_ACCOUNT_ACTIONS.include? action
-
-      management_data = {}
-
-      if action == :change_pw || action == :reset_pw
-        raise JSS::MissingDataError, ":password must be provided when changing management account password" if opts[:password].nil?
-
-        management_data = {
-          action: MGMT_ACCOUNT_ACTIONS[action],
-          managed_password: opts[:password]
-        }
-      elsif action == :reset_random || action == :generate_pw
-        raise JSS::MissingDataError, ":password_length must be provided when setting a random password" if opts[:password_length].nil?
-        raise JSS::InvalidDataError, ":password_length must be an Integer" unless opts[:password_length].is_a? Integer
-
-        management_data = {
-          action: MGMT_ACCOUNT_ACTIONS[action],
-          managed_password_length: opts[:password_length]
-        }
-      else
-        management_data = {
-          action: MGMT_ACCOUNT_ACTIONS[action]
-        }
-      end
-
-      @management_account = management_data
-
-      @need_to_update = true
-
-      @management_account
-
-    end
-
-    # Check if management password matches provided password
-    #
-    # @param password[String] the password that is SHA256'ed to compare to the one from the API.
-    #
-    # @return [Boolean] The result of the comparison of the management password and provided text.
-    #
-    def verify_management_password(password)
-      raise JSS::InvalidDataError, "Management password must be a string." unless password.is_a? String
-
-      raise JSS::UnsupportedError, "'#{@management_account[:action].to_s}' does not support management passwords." unless @management_account[:action] == MGMT_ACCOUNT_ACTIONS[:change_pw] || @management_account[:action] == MGMT_ACCOUNT_ACTIONS[:reset_pw]
-
-      return Digest::SHA256.hexdigest(password).to_s == @management_account[:managed_password_sha256].to_s
+      @printers.map { |p| p[:name] }
     end
 
     ###### Actions
@@ -1841,54 +1311,40 @@ module JSS
     end
     alias execute run
 
-    # Flush logs for this policy older than
-    # some number of days, weeks, months or years, possibly limited to
-    # one or more computers
+    # Flush all policy logs for this policy older than
+    # some number of days, weeks, months or years.
     #
-    # With no parameters, flushes all logs for all computers
+    # With no parameters, flushes all logs
     #
-    # NOTE: Currently the API doesn't have a way to flush only failed policies.
-    #
-    # WARNING: Log flushing can take a long time, and the API call doesnt return
-    # until its finished. The connection timeout will be temporarily raised to
-    # 30 minutes, unless it's already higher.
+    # NOTE: Currently the API doesn't have a way to
+    # flush only failed policies.
     #
     # @param older_than[Integer] 0, 1, 2, 3, or 6
     #
     # @param period[Symbol] :days, :weeks, :months, or :years
     #
-    # @param computers[Array<Integer,String>] Identifiers of the target computers
-    #   either ids, names, SNs, macaddrs, or UDIDs
-    #
     # @return [void]
     #
-    def flush_logs(older_than: 0, period: :days, computers: [])
+    def flush_logs(older_than: 0, period: :days)
       raise JSS::NoSuchItemError, "Policy doesn't exist in the JSS. Use #create first." unless @in_jss
 
-      JSS::Policy.flush_logs(
-        @id,
-        older_than: older_than,
-        period: period,
-        computers: computers,
-        api: @api
-      )
+      unless LOG_FLUSH_INTERVAL_INTEGERS.key?(older_than)
+        raise JSS::InvalidDataError, "older_than must be one of these integers: #{LOG_FLUSH_INTERVAL_INTEGERS.keys.join ', '}"
+      end
+
+      unless LOG_FLUSH_INTERVAL_PERIODS.key?(period)
+        raise JSS::InvalidDataError, "period must be one of these symbols: :#{LOG_FLUSH_INTERVAL_PERIODS.keys.join ', :'}"
+      end
+
+      interval = "#{LOG_FLUSH_INTERVAL_INTEGERS[older_than]}+#{LOG_FLUSH_INTERVAL_PERIODS[period]}"
+
+      @api.delete_rsrc "#{LOG_FLUSH_RSRC}/policy/id/#{@id}/interval/#{interval}"
     end
 
     # Private Instance Methods
     #####################################
 
     private
-
-    # raise an error if a trying to set retry options when
-    # frequency is not 'once per comptuer'
-    #
-    # @return [void]
-    #
-    def validate_retry_opt
-      return if FREQUENCIES[:once_per_computer] == @frequency
-
-      raise JSS::UnsupportedError, 'Policy retry is only available when frequency is set to :once_per_computer'
-    end
 
     # raise an error if a package being added isn't valid
     #
@@ -1954,64 +1410,6 @@ module JSS
       id
     end
 
-    # raise an error if the directory binding being added isn't valid
-    #
-    # @see #add_directory_binding
-    #
-    # @return [Integer, nil] the valid id for the package
-    #
-    def validate_directory_binding_opts(identifier, opts)
-      opts[:position] ||= -1
-
-      opts[:position] =
-        case opts[:position]
-        when :start then 0
-        when :end then -1
-        else JSS::Validate.integer(opts[:position])
-        end
-
-        # if the given position is past the end, set it to -1 (the end)
-        opts[:position] = -1 if opts[:position] > @directory_bindings.size
-
-        id = JSS::DirectoryBinding.valid_id identifier, api: @api
-        raise JSS::NoSuchItemError, "No directory binding matches '#{identifier}'" unless id
-        id
-    end
-
-    # Raises an error if the printer being added isn't valid, additionally checks the options and sets defaults where possible.
-    #
-    # @see #add_printer
-    #
-    # @return [Integer, nil] the valid id for the package
-    #
-    def validate_printer_opts(identifier, opts)
-      opts[:position] ||= -1
-
-      opts[:position] =
-        case opts[:position]
-        when :start then 0
-        when :end then -1
-        else JSS::Validate.integer(opts[:position])
-        end
-
-      # If the given position is past the end, set it to -1 (the end)
-      opts[:position] = -1 if opts[:position] > @printers.size
-
-      # Checks if action to be done with the printer object is provided and valid.
-      raise JSS::MissingDataError, "action must be provided, must be one of :#{PRINTER_ACTIONS.keys.join(':,')}." if opts[:action].nil?
-      raise JSS::InvalidDataError, "action must be one of :#{PRINTER_ACTIONS.keys.join(',:')}." unless PRINTER_ACTIONS.keys.include? opts[:action]
-
-
-      # Checks if the make_default option is valid, and sets the default if needed.
-      raise JSS::InvalidDataError, "make_default must be either true or false." unless opts[:make_default].is_a?(TrueClass) || opts[:make_default].is_a?(FalseClass) || opts[:make_default].nil?
-
-      opts[:make_default] = false if opts[:make_default].nil?
-
-      id = JSS::Printer.valid_id identifier, api: @api
-      raise JSS::NoSuchItemError, "No printer matches '#{identifier}'" unless id
-      id
-    end
-
     def rest_xml
       doc = REXML::Document.new APIConnection::XML_HEADER
       obj = doc.add_element RSRC_OBJECT_KEY.to_s
@@ -2020,10 +1418,6 @@ module JSS
       general.add_element('name').text = @name
       general.add_element('enabled').text = @enabled
       general.add_element('frequency').text = @frequency
-      general.add_element('retry_event').text = @retry_event
-      general.add_element('retry_attempts').text = @retry_attempts.to_s
-      general.add_element('notify_on_each_failed_retry').text = @notify_failed_retries.to_s
-
       general.add_element('target_drive').text = @target_drive
       general.add_element('offline').text = @offline
 
@@ -2052,22 +1446,6 @@ module JSS
       maint.add_element('user_cache').text = @user_cache.to_s
       maint.add_element('verify').text = @verify_startup_disk.to_s
 
-      acct_maint = obj.add_element 'account_maintenance'
-
-      mgmt_acct = acct_maint.add_element 'management_account'
-      JSS.hash_to_rexml_array(@management_account).each { |x| mgmt_acct << x }
-
-      directory_bindings = acct_maint.add_element 'directory_bindings'
-      @directory_bindings.each do |b|
-        directory_binding = directory_bindings.add_element 'binding'
-        dbdeets = JSS.hash_to_rexml_array b
-        dbdeets.each { |d| directory_binding << d }
-      end
-
-      user_interaction = obj.add_element 'user_interaction'
-      user_interaction.add_element('message_start').text = @user_message_start.to_s
-      user_interaction.add_element('message_finish').text = @user_message_finish.to_s
-
       files_processes = obj.add_element 'files_processes'
       JSS.hash_to_rexml_array(@files_processes).each { |f| files_processes << f }
 
@@ -2084,26 +1462,6 @@ module JSS
         script = scripts.add_element 'script'
         sdeets = JSS.hash_to_rexml_array s
         sdeets.each { |d| script << d }
-      end
-
-      disk_encryption = obj.add_element 'disk_encryption'
-
-      @disk_encryption.each do |k,v|
-        disk_encryption.add_element(k.to_s).text = v.to_s
-      end
-
-      printers = obj.add_element 'printers'
-      @printers.each do |pr|
-        printer = printers.add_element 'printer'
-        pdeets = JSS.hash_to_rexml_array pr
-        pdeets.each { |d| printer << d }
-      end
-
-      dock_items = obj.add_element 'dock_items'
-      @dock_items.each do |d|
-        dock_item = dock_items.add_element 'dock_item'
-        ddeets = JSS.hash_to_rexml_array d
-        ddeets.each { |de| dock_item << de }
       end
 
       add_self_service_xml doc

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -106,11 +106,7 @@ module JSS
     # @return [Boolean] Does this object have a site assigned?
     #
     def site_assigned?
-      if @site_name == NO_SITE_NAME
-        false
-      else
-        !@site_name.nil?
-      end
+      !@site_name.nil?
     end # cat assigned?
 
     # Change the site of this object.

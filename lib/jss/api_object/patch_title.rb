@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -132,7 +132,8 @@ module JSS
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :patch_software_title
 
-    NON_UNIQUE_NAMES = true
+    ### these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = %i[notifications name_id source_id].freeze
 
     # the object type for this object in
     # the object history table.
@@ -307,8 +308,7 @@ module JSS
       params[:source_id] ||= params[:source]
 
       # if given a source name, this converts it to an id
-      params[:source_id] = JSS::PatchInternalSource.valid_id params[:source_id]
-      params[:source_id] ||= JSS::PatchExternalSource.valid_id params[:source_id]
+      params[:source_id] = JSS::PatchSource.valid_id params[:source_id]
 
       # build a possible source_name_id
       params[:source_name_id] ||= "#{params[:source_id]}-#{params[:name_id]}"

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -54,6 +54,10 @@ module JSS
     # Class Methods
     #####################################
 
+    def self.all_bundle_ids(refresh = false, api: JSS.api)
+      all(refresh, api: api).map { |mda| mda[:bundle_id] }
+    end
+
     # Class Constants
     #####################################
 
@@ -67,6 +71,9 @@ module JSS
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :mobile_device_application
 
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:internal_app].freeze
+
     # See JSS::Scopable
     SCOPE_TARGET_KEY = :mobile_devices
 
@@ -79,7 +86,8 @@ module JSS
 
     # see JSS::APIObject
     OTHER_LOOKUP_KEYS = {
-      bundle_id: { aliases: %i[bundleid], fetch_rsrc_key: :bundleid }
+      bundleid: {rsrc_id: :bundleid, list: :all_bundle_ids},
+      bundle_id: {rsrc_id: :bundleid, list: :all_bundle_ids}
     }.freeze
 
     # the object type for this object in
@@ -442,18 +450,6 @@ module JSS
       new_ipa = Pathname.new path
       upload(:app, new_ipa)
       refresh_ipa
-    end
-
-    # Remove the various cached data
-    # from the instance_variables used to create
-    # pretty-print (pp) output.
-    #
-    # @return [Array] the desired instance_variables
-    #
-    def pretty_print_instance_variables
-      vars = super
-      vars.delete :@ipa
-      vars
     end
 
     # Private Instance Methods

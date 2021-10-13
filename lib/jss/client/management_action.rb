@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -103,7 +103,8 @@ module JSS
         orig_flags = flags
         prefs['apps'] << { 'bundle-id' => MGMT_ACTION_BUNDLE_ID, 'flags' => flags }
       end
-      plist.open('w') { |f| f.write JSS.xml_plist_from(prefs) }
+      # system "/usr/bin/defaults write #{NCPREFS_DOMAIN} '#{prefs.to_plist}'"
+      plist.open('w') { |f| f.write prefs.to_plist }
       system HUP_NOTIF_CTR_CMD if hup
       orig_flags
     end

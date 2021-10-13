@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -59,6 +59,9 @@ module JSS
     # The hash key used for the JSON object output.
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :ldap_server
+
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [].freeze
 
     # the default LDAP port
     DEFAULT_PORT = 389
@@ -159,7 +162,7 @@ module JSS
     def self.check_membership(ldap_server, user, group, api: JSS.api)
       ldap_server_id = valid_id ldap_server
       raise JSS::NoSuchItemError, "No LDAPServer matching #{ldap_server}" unless ldap_server_id
-      rsrc = "#{RSRC_BASE}/id/#{ldap_server_id}/group/#{CGI.escape group.to_s}/user/#{CGI.escape user.to_s}"
+      rsrc = "#{RSRC_BASE}/id/#{ldap_server_id}/group/#{CGI.escape group}/user/#{CGI.escape user}"
       member_check = api.get_rsrc rsrc
       return false if member_check[:ldap_users].empty?
       true
@@ -302,7 +305,7 @@ module JSS
     #
     def find_user(user, exact = false)
       raise JSS::NoSuchItemError, 'LDAPServer not yet saved in the JSS' unless @in_jss
-      raw = api.get_rsrc("#{RSRC_BASE}/id/#{@id}/user/#{CGI.escape user.to_s}")[:ldap_users]
+      raw = api.get_rsrc("#{RSRC_BASE}/id/#{@id}/user/#{user}")[:ldap_users]
       exact ? raw.select { |u| u[:username] == user } : raw
     end
 
@@ -314,7 +317,7 @@ module JSS
     #
     def find_group(group, exact = false)
       raise JSS::NoSuchItemError, 'LDAPServer not yet saved in the JSS' unless @in_jss
-      raw = api.get_rsrc("#{RSRC_BASE}/id/#{@id}/group/#{CGI.escape group.to_s}")[:ldap_groups]
+      raw = api.get_rsrc("#{RSRC_BASE}/id/#{@id}/group/#{group}")[:ldap_groups]
       exact ? raw.select { |u| u[:groupname] == group } : raw
     end
 

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -55,11 +55,6 @@ module JSS
   ###
   class AlreadyExistsError < RuntimeError; end
 
-  ### AmbiguousError - raise this error when a search
-  ### term that should find one object finds more.
-  ###
-  class AmbiguousError < RuntimeError; end
-
   ### FileServiceError - raise this error when
   ### there's a problem accessing file service on a
   ### distribution point.
@@ -86,9 +81,6 @@ module JSS
   ### a name/pw are wrong
   ###
   class AuthenticationError < RuntimeError; end
-
-  ###
-  class AuthorizationError < RuntimeError ; end
 
   ### ConflictError - raise this when
   ### attempts to PUT or PUSH to the API

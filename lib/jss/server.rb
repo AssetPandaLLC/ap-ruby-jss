@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -108,21 +108,6 @@ module JSS
     def activation_code
       @act_code_data ||= @api.get_rsrc(ACTIVATION_CODE_RSRC)[ACTIVATION_CODE_KEY]
       @act_code_data[:code]
-    end
-
-    # Update the activation code and organization name for this server
-    #
-    # @param org: [String] the organization to which the server is licensed
-    # @param code: [String ]  the activation code for the server licence
-    #
-    # @return [void]
-    def update_activation_code(org:, code:)
-      xml = REXML::Document.new JSS::APIConnection::XML_HEADER
-      acode = xml.add_element ACTIVATION_CODE_KEY.to_s
-      acode.add_element('organization_name').text = org
-      acode.add_element('code').text = code
-
-      @api.put_rsrc ACTIVATION_CODE_RSRC, xml.to_s
     end
 
     # Remove the api object from

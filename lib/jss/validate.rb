@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
 #    with the following modification; you may not use this file except in
@@ -49,12 +49,8 @@ module JSS
     def self.mac_address(val, msg = nil)
       msg ||= "Not a valid MAC address: '#{val}'"
       raise JSS::InvalidDataError, msg unless val =~ MAC_ADDR_RE
-
       val
     end
-
-    # Segments of a valid IPv4 address are integers in this range.
-    IP_SEGMENT_RANGE = 0..255
 
     # Validate the format and content of an IPv4 address
     #
@@ -69,14 +65,12 @@ module JSS
       ok = true
       parts = val.strip.split '.'
       ok = false unless parts.size == 4
-      parts.each { |p| ok = false unless p.jss_integer? && IP_SEGMENT_RANGE.include?(p.to_i) }
+      parts.each { |p| ok = false unless p.jss_integer? && p.to_i < 256 && p.to_i >= 0 }
       raise JSS::InvalidDataError, msg unless ok
-
       val
     end
 
-    # Validate that a value doesn't already exist for a given identifier of a
-    # given class
+    # Validate that a value doesn't already exist for a given identifier of a given class
     #
     # e.g. when klass = JSS::Computer, identifier = :name, and val = 'foo'
     # will raise an error when a computer named 'foo' exists
@@ -95,24 +89,16 @@ module JSS
     #
     # @return [Object] the validated unique value
     #
-    def self.doesnt_already_exist(klass, identifier, val, msg = nil, api: JSS.api)
+    def self.unique_identifier(klass, identifier, val, msg = nil, api: JSS.api)
       msg ||= "A #{klass} already exists with #{identifier} '#{val}'"
       return val unless klass.all(:refresh, api: api).map { |i| i[identifier] }.include? val
-
-      key = klass.real_lookup_key identifier
-
-      # use map_all_ids_to cuz it works with any identifer, even non-existing
-      existing_values = klass.map_all_ids_to( key, api: api).values
-      matches = existing_values.select { |existing_val| existing_val.casecmp? val }
-      return val if matches.empty?
-
       raise JSS::AlreadyExistsError, msg
     end
 
     # Confirm that the given value is a boolean value, accepting
     # strings and symbols and returning real booleans as needed
-    # Accepts: true, false, 'true', 'false', 'yes', 'no', 't','f', 'y', or 'n'
-    # as strings or symbols, case insensitive
+    # Accepts: true, false, 'true', 'false', :true, :false, 'yes', 'no', :yes,
+    # or :no (all Strings and Symbols are case insensitive)
     #
     # TODO: use this throughout ruby-jss
     #
@@ -123,11 +109,10 @@ module JSS
     # @return [Boolean] the valid boolean
     #
     def self.boolean(bool, msg = nil)
+      msg ||= 'Value must be boolean true or false'
       return bool if JSS::TRUE_FALSE.include? bool
-      return true if bool.to_s =~ /^(t(rue)?|y(es)?)$/i
-      return false if bool.to_s =~ /^(f(alse)?|no?)$/i
-
-      msg ||= 'Value must be boolean true or false, or an equivalent string or symbol'
+      return true if bool.to_s =~ /^(true|yes)$/i
+      return false if bool.to_s =~ /^(false|no)$/i
       raise JSS::InvalidDataError, msg
     end
 
@@ -146,7 +131,6 @@ module JSS
       msg ||= 'Value must be an integer'
       val = val.to_i if val.is_a?(String) && val.jss_integer?
       raise JSS::InvalidDataError, msg unless val.is_a? Integer
-
       val
     end
 
@@ -161,86 +145,7 @@ module JSS
     def self.non_empty_string(val, msg = nil)
       msg ||= 'value must be a non-empty String'
       raise JSS::InvalidDataError, msg unless val.is_a?(String) && !val.empty?
-
       val
-    end
-
-    UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.freeze
-
-    # validate that the given value is a valid uuid string
-    #
-    # @param val [Object] the thing to validate
-    #
-    # @param msg[String] A custom error message when the value is invalid
-    #
-    # @return [String] the valid uuid string
-    #
-    def self.uuid(val, msg = nil)
-      return val if val.is_a?(String) && val =~ UUID_RE
-
-      msg ||= 'value must be valid uuid'
-      raise JSS::InvalidDataError, msg
-    end
-
-    # validate that the given value is an integer in the JSS::IBeacon::MAJOR_MINOR_RANGE
-    #
-    # @param val [Object] the thing to validate
-    #
-    # @param msg[String] A custom error message when the value is invalid
-    #
-    # @return [String] the valid integer
-    #
-    def self.ibeacon_major_minor(val, msg = nil)
-      val = val.to_i if val.is_a?(String) && val.jss_integer?
-      ok = val.is_a? Integer
-      ok = JSS::IBeacon::MAJOR_MINOR_RANGE.include? val if ok
-      return val if ok
-
-      msg ||= "value must be an integer in the range #{JSS::IBeacon::MAJOR_MINOR_RANGE}"
-      raise JSS::InvalidDataError, msg unless ok
-    end
-
-    # validate a country name or code from JSS::APP_STORE_COUNTRY_CODES
-    # returning the validated code, or raising an error
-    #
-    # @param country[String] The country name or code
-    #
-    # @param msg[String] A custom error message when the value is invalid
-    #
-    # @return [String] the valid two-letter country code
-    #
-    def self.app_store_country_code(country, msg = nil)
-      country = country.to_s.upcase
-      return country if JSS::APP_STORE_COUNTRY_CODES.value? country
-
-      JSS::APP_STORE_COUNTRY_CODES.each do |name, code|
-        return code if name.upcase == country
-      end
-
-      msg ||= 'Unknown country name or code. See JSS::APP_STORE_COUNTRY_CODES or JSS.country_code_match(str)'
-      raise JSS::InvalidDataError, msg
-    end
-
-    # validate an email address - must match the RegEx /^\S+@\S+\.\S+$/
-    # i.e.:
-    #  1 or more non-whitespace chars, followed by
-    #  an @ character, followed by
-    #  1 or more non-whitespace chars, followed by
-    #  a dot, followed by
-    #  1 or more non-whitespace chars
-    #
-    # @param email[String] The email address
-    #
-    # @param msg[String] A custom error message when the value is invalid
-    #
-    # @return [String] the validly formatted email address
-    #
-    def self.email_address(email, msg = nil)
-      msg ||= "'#{email}' is not formatted as a valid email address"
-      email = email.to_s
-      return email if email =~ /^\S+@\S+\.\S+$/
-
-      raise JSS::InvalidDataError, msg
     end
 
   end # module validate

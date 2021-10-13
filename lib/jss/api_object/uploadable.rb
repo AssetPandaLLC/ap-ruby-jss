@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -103,7 +103,7 @@ module JSS
     #  Methods
     #####################################
 
-
+    #
     # Upload a file to the JSS via the REST Resource of the
     # object to which this module is mixed in.
     #

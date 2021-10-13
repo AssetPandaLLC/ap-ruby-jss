@@ -32,22 +32,14 @@ Gem::Specification.new do |s|
   s.executables << 'jamfHelperBackgrounder'
 
   # Dependencies
-  s.required_ruby_version = '>= 2.3.0'
 
-  # https://github.com/ckruse/CFPropertyList  MIT License (no dependencies)
-  s.add_runtime_dependency 'CFPropertyList', '~> 3.0'
-  # https://github.com/tmtm/ruby-mysql Ruby License (no dependencies)
   s.add_runtime_dependency 'ruby-mysql', '~> 2.9', '>= 2.9.12'
-  # https://github.com/lostisland/faraday: MIT License
-  s.add_runtime_dependency 'faraday', '>= 1.0.0', '<= 1.0.1'
-  # https://github.com/lostisland/faraday_middleware & dependencies: MIT License
-  s.add_runtime_dependency 'faraday_middleware', '>= 1.0.0', '<= 1.0.1'
-  # https://github.com/stitchfix/immutable-struct MIT License (no dependencies)
   s.add_runtime_dependency 'immutable-struct', '~> 2.3', '>= 2.3.0'
-  # https://github.com/aetherknight/recursive-open-struct MIT License (no dependencies)
   s.add_runtime_dependency 'recursive-open-struct', '~> 1.1', '>= 1.1.0'
+  s.add_runtime_dependency 'net-ldap', '~> 0.16'
+  s.add_runtime_dependency 'plist', '~> 3.1'
+  s.add_runtime_dependency 'rest-client', '>= 1.8.0', '< 2.1'
 
   # Rdoc
-  s.extra_rdoc_files = ['README.md', 'LICENSE.txt', 'CHANGES.md', 'THANKS.md']
-  s.rdoc_options << '--title' << 'JSS' << '--line-numbers' << '--main' << 'README.md'
+  s.extra_rdoc_files = ['CHANGES.md']
 end

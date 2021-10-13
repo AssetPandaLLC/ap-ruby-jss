@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -88,7 +88,7 @@ module JSS
     ###
     def match(term, api: JSS.api )
       raise JSS::InvalidDataError, "Match term may not be empty" if term.to_s.empty?
-      rsrc = "#{self::RSRC_BASE}/#{JSS::Matchable::MATCH_RSRC}/#{CGI.escape term.to_s}"
+      rsrc = "#{self::RSRC_BASE}/#{JSS::Matchable::MATCH_RSRC}/#{term}"
       api.get_rsrc(rsrc)[self::RSRC_LIST_KEY]
     end
 

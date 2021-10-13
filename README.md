@@ -1,1 +1,0 @@
-# ap-ruby-jss

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -59,6 +59,9 @@ module JSS
     ### It's also used in various error messages
     RSRC_OBJECT_KEY = :network_segment
 
+    ### these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:distribution_point, :starting_address, :override_departments].freeze
+
     # the object type for this object in
     # the object history table.
     # See {APIObject#add_object_history_entry}
@@ -67,70 +70,21 @@ module JSS
     ### Class Methods
     #####################################
 
-    # All NetworkSegments in the given API as ruby Ranges of IPAddr instances
-    # representing the Segment,
-    # e.g. with starting = 10.24.9.1 and ending = 10.24.15.254
-    # the range looks like:
-    #  <IPAddr: IPv4:10.24.9.1/255.255.255.255>
-    #   ..
-    #  <IPAddr: IPv4:10.24.15.254/255.255.255.255>
-    #
-    # Using the #include? method on those Ranges is very useful.
-    #
-    # Note1: We don't use the IPAddr#to_range method because that works
-    #   best for masked IPAddrs (which are ranges of IPs with widths
-    #   determined by the mask) and Jamf Network Segments can have arbitrary
-    #   widths.
-    #
-    # Note2: See the network_ranges_as_integers method below, which is similar
-    #   but much faster.
-    #
-    # @param refresh[Boolean] should the data be re-queried?
-    #
-    # @param api[JSS::APIConnection] the API to query
-    #
-    # @return [Hash{Integer => Range}] the network segments as IPv4 address Ranges
-    #   keyed by id
-    #
+    ### All NetworkSegments in the jss as IPAddr object Ranges representing the
+    ### Segment, e.g. with starting = 10.24.9.1 and ending = 10.24.15.254
+    ### the range looks like:
+    ###   <IPAddr: IPv4:10.24.9.1/255.255.255.255>..#<IPAddr: IPv4:10.24.15.254/255.255.255.255>
+    ###
+    ### Using the #include? method on those Ranges is very useful.
+    ###
+    ### @param refresh[Boolean] re-read the data from the API?
+    ###
+    ### @param api[JSS::APIConnection] The API connection to query
+    ###
+    ### @return [Hash{Integer => Range}] the network segments as IPv4 address Ranges
+    ###
     def self.network_ranges(refresh = false, api: JSS.api)
-      @network_ranges = nil if refresh
-      return @network_ranges if @network_ranges
-
-      @network_ranges = {}
-      all(refresh, api: api).each do |ns|
-        @network_ranges[ns[:id]] = IPAddr.new(ns[:starting_address])..IPAddr.new(ns[:ending_address])
-      end
-      @network_ranges
-    end # def network_segments
-
-    # An IPv4 Address is really just a 32-bit integer, displayed as four
-    # 8-bit integers. e.g. '10.0.69.1' is really the integer 167789825
-    # The #to_i method of IPAddr objects returns that integer (or the first of
-    # them if the IPAddr is masked).
-    #
-    # Using ranges made of those integers is far faster than using ranges
-    # if IPAddr objects, so that's what this method returns.
-    #
-    # See also: the network_ranges method above
-    #
-    # @param refresh[Boolean] should the data be re-queried?
-    #
-    # @param api[JSS::APIConnection] the APIConnection to query
-    #
-    # @return [Hash{Integer => Range}] the network segments as Integer Ranges
-    #   keyed by id
-    #
-    def self.network_ranges_as_integers(refresh = false, api: JSS.api)
-      @network_ranges_as_integers = nil if refresh
-      return @network_ranges_as_integers if @network_ranges_as_integers
-
-      @network_ranges_as_integers = {}
-      all(refresh, api: api).each do |ns|
-        first = IPAddr.new(ns[:starting_address]).to_i
-        last = IPAddr.new(ns[:ending_address]).to_i
-        @network_ranges_as_integers[ns[:id]] = first..last
-      end
-      @network_ranges_as_integers
+      api.network_ranges refresh
     end # def network_segments
 
     ### An alias for {NetworkSegment.network_ranges}
@@ -226,7 +180,6 @@ module JSS
     ###
     def self.validate_ip_range(startip, endip)
       return nil if IPAddr.new(startip.to_s) <= IPAddr.new(endip.to_s)
-
       raise JSS::InvalidDataError, "Starting IP #{startip} is higher than ending ip #{endip} "
     end
 
@@ -244,96 +197,28 @@ module JSS
     ###
     ### @return [Array<Integer>] the ids of the NetworkSegments containing the given ip
     ###
-    def self.network_segments_for_ip(ipaddr, refresh = false, api: JSS.api)
-      # get the ip as a 32bit interger
-      ip = IPAddr.new(ipaddr.to_s).to_i
-      # a hash of NetSeg ids => Range<Integer>
-      network_ranges_as_integers(refresh, api: api).select { |_id, range| range.include? ip }.keys
+    def self.network_segments_for_ip(ip, refresh = false, api: JSS.api)
+      api.network_segments_for_ip ip, refresh
     end
 
-    # Which network segment is seen as current for a given IP addr?
-    #
-    # According to the Jamf Pro Admin Guide, if an IP is in more than one network
-    # segment, it uses the 'smallest' (narrowest) one - the one with fewest
-    # IP addrs within it.
-    #
-    # If multiple ones have the same width, then it uses the one of
-    # those with the lowest starting address
-    #
-    # @return [Integer, nil] the id of the current net segment, or nil
-    #
-    def self.network_segment_for_ip(ipaddr, refresh: false, api: JSS.api)
-      # get the ip as a 32bit interger
-      ip = IPAddr.new(ipaddr.to_s).to_i
-      # a hash of NetSeg ids => Range<Integer>
-      ranges = network_ranges_as_integers(refresh, api: api).select { |_id, range| range.include? ip }
-
-      # we got nuttin
-      return nil if ranges.empty?
-
-      # if we got only one, its the one
-      return ranges.keys.first if ranges.size == 1
-
-      # got more than one, sort by range size/width, asc.
-      sorted_by_size = ranges.sort_by { |_i, r| r.size }.to_h
-
-      # the first one is the smallest/narrowest.
-      _smallest_range_id, smallest_range = sorted_by_size.first
-
-      smallest_range_size = smallest_range.size
-
-      # select all of them that are the same size
-      all_of_small_size = sorted_by_size.select { |_i, r| r.size == smallest_range_size }
-
-      # sort them by the start of each range (r.first)
-      # and return the lowest start (returned by min_by)
-      my_range_id, _my_range = all_of_small_size.min_by { |_i, r| r.first }
-
-      # and return the id
-      my_range_id
+    # @deprecated use network_segments_for_ip
+    # Backward compatibility
+    def self.network_segment_for_ip(ip, api: JSS.api)
+      network_segments_for_ip(ip, api: api)
     end
 
-    # given 2 IPAddr instances, find out how 'wide' they are -
-    # how many IP addresses exist between them.
-    def self.ip_range_width(ip1, ip2)
-      raise ArgumentError, 'Parameters must be IPAddr objects' unless ip1.is_a?(IPAddr) && ip2.is_a?(IPAddr)
-
-      low, high = [ip1, ip2].sort
-      high.to_i - low.to_i
+    ### Find the current network segment ids for the machine running this code
+    ###
+    ### @return [Array<Integer>]  the NetworkSegment ids for this machine right now.
+    ###
+    def self.my_network_segments(api: JSS.api)
+      network_segment_for_ip JSS::Client.my_ip_address, api: api
     end
 
-    # Find the current network segment ids for the machine running this code
-    #
-    # See my_network_segment to get the current one according to the server.
-    #
-    # @param names [Boolean] the array will contain Network Segment names, not ids
-    #
-    # @return [Array<Integer>,Array<String>] the NetworkSegment ids or names for this machine right now.
-    #
-    def self.my_network_segments(refresh = false, names: false, api: JSS.api)
-      ids = network_segments_for_ip JSS::Client.my_ip_address, refresh, api: api
-      return ids unless names
-
-      ids_to_names = map_all_ids_to :name
-      ids.map { |id| ids_to_names[id] }
-    end
-
-    # Which network segment is seen as current? According to the
-    # Jamf Pro Admin Guide, the 'smallest' one - the one with fewest IP
-    # addrs within it.  If multiple ones have the same number of IPs,
-    # then its the one with the lowest starting address
-    #
-    # @param name [Boolean] return the name of the netsegment, not the id
-    #
-    # @return [Integer, String, nil] the id of the current net segment, or nil
-    def self.my_network_segment(refresh = false, name: false, api: JSS.api)
-      my_ip = JSS::Client.my_ip_address
-      return nil unless my_ip
-
-      id = network_segment_for_ip(my_ip, refresh: refresh, api: api)
-      return id unless name
-
-      map_all_ids_to(:name)[id]
+    # @deprecated use my_network_segments
+    # Backward compatibility
+    def self.my_network_segment(api: JSS.api)
+      my_network_segments api: api
     end
 
     ### Attributes
@@ -435,10 +320,9 @@ module JSS
         @starting_address <= thing.range.begin && @ending_address >= thing.range.end
       else
         thing = IPAddr.new thing.to_s
-        range.cover? thing
+        range.include? thing
       end
     end
-    alias cover? include?
 
     ### Does this network segment equal another?
     ### equality means the ranges are equal
@@ -460,17 +344,9 @@ module JSS
     ### @return [void]
     ###
     def building=(newval)
-      new =
-        if newval.to_s.empty?
-          JSS::BLANK
-        else
-          id = JSS::Building.valid_id newval
-          raise JSS::MissingDataError, "No building matching '#{newval}'" unless id
-
-          JSS::Building.map_all_ids_to(:name)[id]
-        end
-
-      @building = new
+      new = JSS::Building.all.select { |b| (b[:id] == newval) || (b[:name] == newval) }[0]
+      raise JSS::MissingDataError, "No building matching '#{newval}'" unless new
+      @building = new[:name]
       @need_to_update = true
     end
 
@@ -493,16 +369,9 @@ module JSS
     ### @return [void]
     ###
     def department=(newval)
-      new =
-        if newval.to_s.empty?
-          JSS::BLANK
-        else
-          id = JSS::Department.valid_id newval
-          raise JSS::MissingDataError , "No department matching '#{newval}' in the JSS" unless id
-
-          JSS::Department.map_all_ids_to(:name)[id]
-        end
-      @department = new
+      new = JSS::Department.all.select { |b| (b[:id] == newval) || (b[:name] == newval) }[0]
+      raise JSS::MissingDataError, "No department matching '#{newval}' in the JSS" unless new
+      @department = new[:name]
       @need_to_update = true
     end
 
@@ -521,22 +390,14 @@ module JSS
 
     ### set the distribution_point
     ###
-    ### @param newval[String, Integer, nil] the new dist. point by name or id, must be in the JSS, or nil  or blank to unset
+    ### @param newval[String, Integer] the new dist. point by name or id, must be in the JSS
     ###
     ### @return [void]
     ###
     def distribution_point=(newval)
-      new =
-        if newval.to_s.empty?
-          JSS::BLANK
-        else
-          id = JSS::DistributionPoint.valid_id newval
-          raise JSS::MissingDataError, "No distribution_point matching '#{newval}' in the JSS" unless id
-
-          JSS::DistributionPoint.map_all_ids_to(:name)[id]
-        end
-
-      @distribution_point = new
+      new = JSS::DistributionPoint.all.select { |b| (b[:id] == newval) || (b[:name] == newval) }[0]
+      raise JSS::MissingDataError, "No distribution_point matching '#{newval}' in the JSS" unless new
+      @distribution_point = new[:name]
       @need_to_update = true
     end
 
@@ -547,17 +408,9 @@ module JSS
     ### @return [void]
     ###
     def netboot_server=(newval)
-      new =
-        if newval.to_s.empty?
-          JSS::BLANK
-        else
-          id = JSS::NetBootServer.valid_id newval
-          raise JSS::MissingDataError, "No netboot_server matching '#{newval}' in the JSS" unless id
-
-          JSS::NetbootServer.map_all_ids_to(:name)[id]
-        end
-
-      @netboot_server = new
+      new = JSS::NetbootServer.all.select { |b| (b[:id] == newval) || (b[:name] == newval) }[0]
+      raise JSS::MissingDataError, "No netboot_server matching '#{newval}' in the JSS" unless new
+      @netboot_server = new[:name]
       @need_to_update = true
     end
 
@@ -568,17 +421,9 @@ module JSS
     ### @return [void]
     ###
     def swu_server=(newval)
-      new =
-        if newval.to_s.empty?
-          JSS::BLANK
-        else
-          id = JSS::SoftwareUpdateServer.valid_id newval
-          raise JSS::MissingDataError, "No swu_server matching '#{newval}' in the JSS" unless id
-
-          JSS::SoftwareUpdateServer.map_all_ids_to(:name)[id]
-        end
-
-      @swu_server = new
+      new = JSS::SoftwareUpdateServer.all.select { |b| (b[:id] == newval) || (b[:name] == newval) }[0]
+      raise JSS::MissingDataError, "No swu_server matching '#{newval}' in the JSS" unless new
+      @swu_server = new[:name]
       @need_to_update = true
     end
 

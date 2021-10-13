@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -22,9 +22,6 @@
 #    language governing permissions and limitations under the Apache License.
 #
 #
-
-# TEMPPORARY
-require 'digest'
 
 module JSS
 
@@ -61,6 +58,9 @@ module JSS
     # It's also used in various error messages
     RSRC_OBJECT_KEY = :package
 
+    # these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = %i[fill_existing_users fill_user_template reboot_required].freeze
+
     # The pkg storage folder on the distribution point
     DIST_POINT_PKGS_FOLDER = 'Packages'.freeze
 
@@ -81,21 +81,6 @@ module JSS
 
     # The table in the database for this object
     DB_TABLE = 'packages'.freeze
-
-    # The hash_type value in the API for md5
-    CHECKSUM_HASH_TYPE_MD5 = 'MD5'.freeze
-
-    # The hash_type value in the API for sha512
-    CHECKSUM_HASH_TYPE_SHA512 = 'SHA_512'.freeze
-
-    # Mapping of the hash types to the maching Digest modules
-    # See {#calculate_checksum}
-    CHECKSUM_HASH_TYPES = {
-      CHECKSUM_HASH_TYPE_MD5 => Digest::MD5,
-      CHECKSUM_HASH_TYPE_SHA512 => Digest::SHA512
-    }.freeze
-
-    DEFAULT_CHECKSUM_HASH_TYPE = CHECKSUM_HASH_TYPE_SHA512
 
     # the object type for this object in
     # the object history table.
@@ -121,31 +106,9 @@ module JSS
     # @return [Array<String>] The current file names
     #
     def self.all_filenames(api: JSS.api)
-      all_filenames_by(:id, api: api).values
-    end
-
-    # A Hash of all dist-point filenames used by all JSS packages, keyed by
-    # package name or id
-    #
-    # Slow cuz we have to instantiate every pkg
-    #
-    # @param key[Symbol] either :id, or :name
-    #
-    # @param api[JSS::APIConnection] an API connection to use
-    #   Defaults to the corrently active API. See {JSS::APIConnection}
-    #
-    # @return [Hash{Ingeter,String => String}] The current file names by key
-    #
-    def self.all_filenames_by(key, api: JSS.api)
-      raise ArgumentError, 'key must be :id or :name' unless %i[id name].include? key
-
-      files_in_use = {}
-      all_ids(:refresh).each do |pkg_id|
-        pkg = fetch id: pkg_id, api: api
-        files_in_use[pkg.send(key)] = pkg.filename
-      end
-
-      files_in_use
+      pkgs_in_use = []
+      all_ids.each { |pkg_id| pkgs_in_use << fetch(id: pkg_id, api: api).filename }
+      pkgs_in_use.compact
     end
 
     # An array of String filenames for all files DIST_POINT_PKGS_FOLDER
@@ -162,17 +125,14 @@ module JSS
     # @param api[JSS::APIConnection] an API connection to use
     #   Defaults to the corrently active API. See {JSS::APIConnection}
     #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
     # @return [Array<String>] The orphaned files
     #
-    def self.orphaned_files(ro_pw, unmount = true, api: JSS.api, dist_point: nil)
-      dp = fetch_dist_point(dist_point, api: api)
-      pkgs_dir = dp.mount(ro_pw, :ro) + DIST_POINT_PKGS_FOLDER
-      files_on_dp = pkgs_dir.children.map { |f| f.basename.to_s }
-      dp.unmount if unmount
-      files_on_dp - all_filenames(api: api)
+    def self.orphaned_files(ro_pw, unmount = true, api: JSS.api)
+      mdp = JSS::DistributionPoint.master_distribution_point api: api
+      pkgs_dir = mdp.mount(ro_pw, :ro) + DIST_POINT_PKGS_FOLDER
+      files_on_mdp = pkgs_dir.children.map { |f| f.basename.to_s }
+      mdp.unmount if unmount
+      files_on_mdp - all_filenames(api: api)
     end
 
     # An array of String filenames for all filenames in any
@@ -189,45 +149,14 @@ module JSS
     # @param api[JSS::APIConnection] an API connection to use
     #   Defaults to the corrently active API. See {JSS::APIConnection}
     #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
-    #
     # @return [Array<String>] The orphaned files
     #
-    def self.missing_files(ro_pw, unmount = true, api: JSS.api, dist_point: nil)
-      dp = fetch_dist_point(dist_point, api: api)
-      pkgs_dir = dp.mount(ro_pw, :ro) + DIST_POINT_PKGS_FOLDER
-      files_on_dp = pkgs_dir.children.map { |f| f.basename.to_s }
-      dp.unmount if unmount
-      all_filenames(api: api) - files_on_dp
-    end
-
-    # Given a file path, and hash type, generate the checksum for an arbitrary
-    # file.
-    #
-    # @param filepath [String, Pathname] The file to checksum
-    #
-    # @param type [String ] One of the keys of CHECKSUM_HASH_TYPES, either
-    #    CHECKSUM_HASH_TYPE_MD5 or CHECKSUM_HASH_TYPE_SHA512
-    #
-    # @return [String] The checksum of the file
-    #
-    def self.calculate_checksum(filepath, type = DEFAULT_CHECKSUM_HASH_TYPE )
-      raise ArgumentError, 'Unknown checksum hash type' unless CHECKSUM_HASH_TYPES.key? type
-      CHECKSUM_HASH_TYPES[type].file(filepath).hexdigest
-    end
-
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
-    # @return [JSS::DistributionPoint]
-    def self.fetch_dist_point(dist_point, api: JSS.api)
-      if dist_point
-        JSS::DistributionPoint.fetch dist_point, api: api
-      else
-        JSS::DistributionPoint.master_distribution_point api: api
-      end
+    def self.missing_files(ro_pw, unmount = true, api: JSS.api)
+      mdp = JSS::DistributionPoint.master_distribution_point api: api
+      pkgs_dir = mdp.mount(ro_pw, :ro) + DIST_POINT_PKGS_FOLDER
+      files_on_mdp = pkgs_dir.children.map { |f| f.basename.to_s }
+      mdp.unmount if unmount
+      all_filenames(api: api) - files_on_mdp
     end
 
     # Attributes
@@ -278,14 +207,6 @@ module JSS
     # @return [Boolean] does this pkg cause a notification to be sent on self-heal?
     attr_reader :send_notification
 
-    # @ @return [Symbol] The checksum hash type used to generate the checksum value,
-    #  either :md5 or :sha512, defaults to :sha512 if there is no checksum yet.
-    attr_reader :checksum_type
-
-    # @return [String, nil] the checksum value for the package file on the
-    #   dist. point, if it's been calculated.
-    attr_reader :checksum
-
     # @see JSS::APIObject#initialize
     #
     def initialize(args = {})
@@ -309,10 +230,6 @@ module JSS
       @required_processor = nil if @required_processor.to_s.casecmp('none').zero?
       @send_notification = @init_data[:send_notification]
       @switch_with_package = @init_data[:switch_with_package] || DO_NOT_INSTALL
-
-      @checksum = @init_data[:hash_value] #ill be nil if no checksum
-      @checksum_type = @checksum ? @init_data[:hash_type] : DEFAULT_CHECKSUM_HASH_TYPE
-
 
       # the receipt is the filename with any .zip extension removed.
       @receipt = @filename ? (JSS::Client::RECEIPTS_FOLDER + @filename.to_s.sub(/.zip$/, '')) : nil
@@ -365,7 +282,7 @@ module JSS
       new_val = nil if new_val == ''
       new_val ||= @name
       return nil if new_val == @filename
-
+      warn 'WARNING: you must change the filename on the master Distribution Point. See JSS::Package.update_master_filename.' if @in_jss
       @filename = new_val
       @need_to_update = true
     end
@@ -434,38 +351,9 @@ module JSS
     #
     def notes=(new_val)
       return nil if new_val == @notes
-
       # line breaks should be \r
       new_val = new_val.to_s.tr("\n", "\r")
       @notes = new_val
-      @need_to_update = true
-    end
-
-    # Change the  checksum type
-    #
-    # @param new_val[String]
-    #
-    # @return [void]
-    #
-    def checksum_type=(new_val)
-      return if new_val == @checksum_type
-      raise JSS::InvalidDataError, "Checksum type must be one of: #{CHECKSUM_HASH_TYPES.keys.join ', '} " unless CHECKSUM_HASH_TYPES.key? new_val
-
-      @checksum_type = new_val
-      @need_to_update = true
-    end
-
-    # Change the  checksum type
-    #
-    # @param new_val[String]
-    #
-    # @return [void]
-    #
-    def checksum=(new_val)
-      return if new_val == @checksum
-      raise JSS::InvalidDataError, 'Checksum must be a String or nil' unless new_val.is_a?(String) || new_val.nil?
-
-      @checksum = new_val
       @need_to_update = true
     end
 
@@ -628,20 +516,13 @@ module JSS
     #
     # @param unmount[Boolean] whether or not ot unount the distribution point when finished.
     #
-    # @param chksum [String] the constants CHECKSUM_HASH_TYPE_SHA512 or
-    #   CHECKSUM_HASH_TYPE_MD5. Anything else means don't calc.
-    #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
     # @return [void]
     #
-    def upload_master_file(local_file_path, rw_pw, unmount = true, chksum: DEFAULT_CHECKSUM_HASH_TYPE, dist_point: nil)
+    def upload_master_file(local_file_path, rw_pw, unmount = true)
       raise JSS::NoSuchItemError, 'Please create this package in the JSS before uploading it.' unless @in_jss
 
-      dp = self.class.fetch_dist_point(dist_point, api: @api)
-
-      destination = dp.mount(rw_pw, :rw) + "#{DIST_POINT_PKGS_FOLDER}/#{@filename}"
+      mdp = JSS::DistributionPoint.master_distribution_point api: @api
+      destination = mdp.mount(rw_pw, :rw) + "#{DIST_POINT_PKGS_FOLDER}/#{@filename}"
 
       local_path = Pathname.new local_file_path
       raise JSS::NoSuchItemError, "Local file '#{@local_file}' doesn't exist" unless local_path.exist?
@@ -676,131 +557,13 @@ module JSS
         destination = destination.to_s + '.zip'
         @filename = zipfile.basename.to_s
         @need_to_update = true
+        update
       end # if directory
 
       FileUtils.copy_entry local_path, destination
 
-      if CHECKSUM_HASH_TYPES.keys.include? chksum
-        @checksum_type = chksum
-        @checksum = calculate_checksum local_file: local_path, type: chksum, unmount: false, dist_point: dist_point
-        @need_to_update = true
-      end
-      update if @need_to_update
-      dp.unmount if unmount
-    end # upload master file
-
-    # Using either a local file, or the file on the master dist. point,
-    # re-set the checksum for this package. Call #update to save the
-    # new one to the JSS.
-    #
-    # BE VERY CAREFUL if using a local copy of the file - make sure its
-    # identical to the one on the dist point.
-    #
-    # This can be used to change the checksum type, and by default will use
-    # DEFAULT_CHECKSUM_HASH_TYPE ('SHA_512')
-    #
-    # @param @see calculate_checksum
-    #
-    # @return [void]
-    #
-    def reset_checksum(type: nil, local_file: nil, rw_pw: nil, ro_pw: nil, unmount: true, dist_point: nil )
-      type ||= DEFAULT_CHECKSUM_HASH_TYPE
-
-      new_checksum = calculate_checksum(
-        type: type,
-        local_file: local_file,
-        rw_pw: rw_pw,
-        ro_pw: ro_pw,
-        unmount: unmount,
-        dist_point: dist_point
-      )
-      return if @checksum == new_checksum
-
-      @checksum_type = type
-      @checksum = new_checksum
-      @need_to_update = true
-    end
-
-    # Caclulate and return the checksum hash for a given local file, or the file
-    # on the master dist point if no local file is given.
-    #
-    # @param type [String] The checksum hash type, one of the keys of
-    #   CHECKSUM_HASH_TYPES
-    #
-    # @param local_file [String, Pathname] A local copy of the pkg file. BE SURE
-    #   it's identical to the one on the server. If omitted, the master dist.
-    #   point will be mounted and the file read from there.
-    #
-    # @param rw_pw [String] The read-write password for mounting the master dist
-    #   point. Either this or the ro_pw must be provided if no local_file
-    #
-    # @param ro_pw [String] The read-onlypassword for mounting the master dist
-    #   point. Either this or the rw_pw must be provided if no local_file
-    #
-    # @param unmount [Boolean] Unmount the master dist point after using it.
-    #   Only used if the dist point is mounted. default: true
-    #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
-    # @return [String] The calculated checksum
-    #
-    def calculate_checksum(type: nil, local_file: nil, rw_pw: nil, ro_pw: nil, unmount: true, dist_point: nil )
-      type ||= DEFAULT_CHECKSUM_HASH_TYPE
-      dp = self.class.fetch_dist_point(dist_point, api: @api)
-
-      if local_file
-        file_to_calc = local_file
-      else
-        if rw_pw
-          dppw = rw_pw
-          mnt = :rw
-        elsif ro_pw
-          dppw = ro_pw
-          mnt = :ro
-        else
-          raise ArgumentError, 'Either rw_pw: or ro_pw: must be provided'
-        end
-        file_to_calc = dp.mount(dppw, mnt) + "#{DIST_POINT_PKGS_FOLDER}/#{@filename}"
-      end
-      new_checksum = self.class.calculate_checksum(file_to_calc, type)
-      dp.unmount if unmount && dp.mounted?
-      new_checksum
-    end
-
-    # Is the checksum for this pkg is valid?
-    #
-    # @param local_file [String, Pathname] A local copy of the pkg file. BE SURE
-    #   it's identical to the one on the server. If omitted, the master dist.
-    #   point will be mounted and the file read from there.
-    #
-    # @param rw_pw [String] The read-write password for mounting the master dist
-    #   point. Either this or the ro_pw must be provided if no local_file
-    #
-    # @param ro_pw [String] The read-onlypassword for mounting the master dist
-    #   point. Either this or the rw_pw must be provided if no local_file
-    #
-    # @param unmount [Boolean] Unmount the master dist point after using it.
-    #   Only used if the dist point is mounted. default: true
-    #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
-    # @return [Boolean] false if there is no checksum for this pkg, otherwise,
-    #   does the calculated checksum match the one stored for the pkg?
-    #
-    def checksum_valid?(local_file: nil, rw_pw: nil, ro_pw: nil, unmount: true, dist_point: nil )
-      return false unless @checksum
-      new_checksum = calculate_checksum(
-        type: @checksum_type,
-        local_file: local_file,
-        rw_pw: rw_pw,
-        ro_pw: ro_pw,
-        unmount: unmount,
-        dist_point: dist_point
-      )
-      new_checksum == @checksum
-    end
+      mdp.unmount if unmount
+    end # upload
 
     # Change the name of a package file on the master distribution point.
     #
@@ -813,16 +576,12 @@ module JSS
     # @param rw_pw[String,Symbol] the password for the read/write account on the master Distribution Point,
     #   or :prompt, or :stdin# where # is the line of stdin containing the password See {JSS::DistributionPoint#mount}
     #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
     # @return [nil]
     #
-    def update_master_filename(old_file_name, new_file_name, rw_pw, unmount = true, dist_point: nil)
+    def update_master_filename(old_file_name, new_file_name, rw_pw, unmount = true)
       raise JSS::NoSuchItemError, "#{old_file_name} does not exist in the jss." unless @in_jss
-      dp = self.class.fetch_dist_point(dist_point, api: @api)
-
-      pkgs_dir = dp.mount(rw_pw, :rw) + DIST_POINT_PKGS_FOLDER.to_s
+      mdp = JSS::DistributionPoint.master_distribution_point api: @api
+      pkgs_dir = mdp.mount(rw_pw, :rw) + DIST_POINT_PKGS_FOLDER.to_s
       old_file = pkgs_dir + old_file_name
       raise JSS::NoSuchItemError, "File not found on the master distribution point at #{DIST_POINT_PKGS_FOLDER}/#{old_file_name}." unless \
         old_file.exist?
@@ -832,11 +591,9 @@ module JSS
       new_file = pkgs_dir + (new_file_name + old_file.extname) if new_file.extname.empty?
 
       old_file.rename new_file
-      dp.unmount if unmount
+      mdp.unmount if unmount
       nil
     end # update_master_filename
-
-
 
     # Delete the filename from the master distribution point, if it exists.
     #
@@ -848,21 +605,18 @@ module JSS
     #
     # @param unmount[Boolean] whether or not ot unount the distribution point when finished.
     #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
     # @return [Boolean] was the file deleted?
     #
-    def delete_master_file(rw_pw, unmount = true, dist_point: nil)
-      dp = self.class.fetch_dist_point(dist_point, api: @api)
-      file = dp.mount(rw_pw, :rw) + "#{DIST_POINT_PKGS_FOLDER}/#{@filename}"
+    def delete_master_file(rw_pw, unmount = true)
+      mdp = JSS::DistributionPoint.master_distribution_point api: @api
+      file = mdp.mount(rw_pw, :rw) + "#{DIST_POINT_PKGS_FOLDER}/#{@filename}"
       if file.exist?
         file.delete
         did_it = true
       else
         did_it = false
       end # if exists
-      dp.unmount if unmount
+      mdp.unmount if unmount
       did_it
     end # delete master file
 
@@ -876,13 +630,9 @@ module JSS
     #
     # @param unmount[Boolean] whether or not ot unount the distribution point when finished.
     #
-    # @param dist_point [String,Integer] the name or id of the distribution
-    #   point to use. Defaults to the Master Dist. Point
-    #
-    # @return [void]
-    def delete(delete_file: false, rw_pw: nil, unmount: true, dist_point: nil)
+    def delete(delete_file: false, rw_pw: nil, unmount: true)
       super()
-      delete_master_file(rw_pw, unmount, dist_point: dist_point) if delete_file
+      delete_master_file(rw_pw, unmount) if delete_file
     end
 
     # Install this package via the jamf binary 'install' command from the
@@ -949,7 +699,7 @@ module JSS
 
         # we'll re-add the filename below if needed.
         src_path = args[:alt_download_url].chomp "/#{@filename}"
-        using_http = true
+
       # use our appropriate dist. point for download
       else
         mdp = JSS::DistributionPoint.my_distribution_point api: @api
@@ -963,7 +713,7 @@ module JSS
             raise JSS::InvaldDatatError, 'Incorrect password for http access to distribution point.' unless mdp.check_pw(:http, ro_pw)
             # insert the name and pw into the uri
             # reserved_chars = Regexp.new("[^#{URI::REGEXP::PATTERN::UNRESERVED}]") # we'll escape all the chars that aren't unreserved
-            src_path = src_path.sub(%r{(https?://)(\S)}, "#{Regexp.last_match(1)}#{CGI.escape mdp.http_username.to_s}:#{CGI.escape ro_pw.to_s}@#{Regexp.last_match(2)}")
+            src_path = src_path.sub(%r{(https?://)(\S)}, "#{Regexp.last_match(1)}#{CGI.escape mdp.http_username}:#{CGI.escape ro_pw}@#{Regexp.last_match(2)}")
           end
 
         # or with filesharing?
@@ -1085,7 +835,6 @@ module JSS
 
     private
 
-
     # Return the REST XML for this pkg, with the current values,
     # for saving or updating
     #
@@ -1107,10 +856,6 @@ module JSS
       pkg.add_element('required_processor').text = @required_processor.to_s.empty? ? 'None' : @required_processor
       pkg.add_element('send_notification').text = @send_notification
       pkg.add_element('switch_with_package').text = @switch_with_package
-
-      pkg.add_element('hash_type').text = @checksum_type
-      pkg.add_element('hash_value').text = @checksum.to_s
-
       add_category_to_xml(doc)
       doc.to_s
     end # rest xml

@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -96,7 +96,12 @@ api_ssl_version:
 ###
 api_verify_cert:
 
-
+### - api_username
+###   The username to use when making an API connection.
+###
+###   Note that the passwords are not storeable here!!
+###     see https://github.com/PixarAnimationStudios/ruby-jss/blob/master/README.md#password
+###
 api_username:
 
 ### - api_timeout_open

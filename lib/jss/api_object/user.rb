@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -70,6 +70,9 @@ module JSS
     ### It's also used in various error messages
     RSRC_OBJECT_KEY = :user
 
+    ### these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:position, :full_name, :email]
+
     ### This class lets us seach for users
     SEARCH_CLASS = JSS::AdvancedUserSearch
 
@@ -99,7 +102,7 @@ module JSS
 
     ### @return [String] The name of the user's LDAP server
     attr_reader :ldap_server
-    attr_reader :ldap_sever_id
+
 
     ### @return [Array<Hash>]
     ###
@@ -144,7 +147,7 @@ module JSS
 
     ### @return [Array<Hash>]
     ###
-    ### The user-based vpp assignments associated with this user
+    ### The vpp assignments associated with this user
     ###
     ### Each Hash has then :id and :name for one assignment
     ###
@@ -168,7 +171,6 @@ module JSS
       @phone_number = @init_data[:phone_number]
       @position = @init_data[:position]
       @ldap_server = JSS::APIObject.get_name @init_data[:ldap_server]
-      @ldap_server_id = @init_data[:ldap_server][:id] unless @init_data[:ldap_server].nil?
       @sites = @init_data[:sites] ? @init_data[:sites]  : []
 
       if @init_data[:links]
@@ -218,7 +220,6 @@ module JSS
     def ldap_server= (new_val)
       raise JSS::InvalidDataError, "No LDAP server in the JSS named #{new_val}" unless JSS::LDAPServer.all_names(api: @api).include? new_val
       @ldap_server = new_val
-      @ldap_server_id = JSS::LDAPServer.valid_id @ldap_server
       @need_to_update = true
     end
 
@@ -249,47 +250,6 @@ module JSS
       @need_to_update = true
     end
 
-    # Workaround for the recurring Jamf Classic API Bug where
-    # JSON is missing data that should come in an array of hashes, but
-    # only comes as a hash with a single hash inside, with data for only
-    # the last item in the XML array.
-    #
-    # When needed, we fetch and parse the XML, which has the desired data.
-    # Use any truthy parameter to re-fetch the XML data, otherwise the
-    # data last fetched is used.
-    #
-    # In this case, the user group data is fetched as XML and returned as
-    # an Array of Hashes, one per group the user is a member of. Each hash
-    # containing three Symbol keys:
-    #
-    #   id: Integer, the group id
-    #   name: String, the group name
-    #   is_smart: Boolean, is it a smart group or a static group?
-    #
-    # @param refresh[Boolean] Re-fetch the group data from the API
-    #
-    # @return [Array<Hash>] The groups the user is a member of.
-    #
-    def user_groups(refresh = false)
-      @grp_array = nil if refresh
-      return @grp_array if @grp_array
-
-      @grp_array = []
-      raw_xml = @api.get_rsrc "/users/id/#{@id}", :xml
-      xmlroot = REXML::Document.new(raw_xml).root
-      xml_grps = xmlroot.elements['user_groups']
-
-      xml_grps.each do |xml_grp|
-        next if xml_grp.name == 'size'
-
-        gid = xml_grp.elements['id'].text.to_i
-        gname = xml_grp.elements['name'].text
-        smart = xml_grp.elements['is_smart'].text == 'true'
-        @grp_array << { id: gid, name: gname, is_smart: smart }
-      end # groups.each
-
-      @grp_array
-    end # user_groups
 
     #####################################
     ### Private Instance Methods
@@ -307,7 +267,7 @@ module JSS
       user.add_element('position').text = @position
 
       ldap = user.add_element('ldap_server')
-      ldap.add_element('id').text = @ldap_server_id
+      ldap.add_element('name').text = @ldap_server
 
       user << JSS::Site.xml_list(@sites)
 

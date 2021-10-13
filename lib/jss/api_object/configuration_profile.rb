@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -23,6 +23,7 @@
 #
 #
 
+#
 module JSS
 
   # Classes
@@ -55,11 +56,6 @@ module JSS
     # which DISTRIBUTION_METHODS means we're in self service?
     SELF_SERVICE_DIST_METHOD = 'Make Available in Self Service'.freeze
 
-    # when a change is made, which in-scope machines should get
-    # the changed profile?
-    REDEPLOY_NEWLY_ASSIGNED = 'Newly Assigned'.freeze
-    REDEPLOY_ALL = 'All'.freeze
-
     # Our SelfService deploys profiles
     SELF_SERVICE_PAYLOAD = :profile
 
@@ -72,6 +68,7 @@ module JSS
     # How is the category stored in the API data?
     CATEGORY_DATA_TYPE = Hash
 
+
     # Attributes
     ###################################
 
@@ -81,11 +78,7 @@ module JSS
     # @return [String] the uuid of this profile. NOT Updatable
     attr_reader :uuid
 
-    # @return [String] When a change is made to the profile, which scoped machines
-    #   should get the changes? This will always contain REDEPLOY_NEWLY_ASSIGNED
-    #   when fetched, but can be set to REDEPLOY_ALL via the redeploy_to_all:
-    #   parameter to #update & #save. After the update is complete, it reverts
-    #   to REDEPLOY_NEWLY_ASSIGNED
+    # @return [Boolean] Should this profile be redeployed when an inventory update happens?
     attr_reader :redeploy_on_update
 
     # @return [String] the plist containing the payloads for this profile. NOT Updatable
@@ -112,10 +105,8 @@ module JSS
     # @return [void]
     #
     def description=(new_val)
-      new_val = new_val.strip
       return nil if @self_service_description == new_val
-
-      @description = new_val
+      @description = new_val.strip!
       @need_to_update = true
     end # @param new_val[String] how should this be distributed to clients?
 
@@ -123,7 +114,7 @@ module JSS
     #
     # @return [Hash] the parsed payloads plist.
     def parsed_payloads
-      JSS.parse_plist @payloads
+      Plist.parse_xml @payloads
     end
 
     # @return [Array<Hash>] the individual payloads from the payload Plist
@@ -132,56 +123,10 @@ module JSS
       parsed_payloads['PayloadContent']
     end
 
-    # @param new_content [Array<Hash>] replace the payload content entirely.
-    #
-    #   The 'payload' of a config profile is an XML Plist. The top-level key
-    #   of that plist 'PayloadContent' contains an Array of Dicts, each one being
-    #   a part of the payload for the profile.
-    #
-    #   When replacing the PayloadContent Array, using this method, provide a
-    #   *ruby* Array full of *ruby* hashes, and they will be converted to a
-    #   Plist and embedded into the API XML appropriately.
-    #
-    #   WARNING: This is experimental! Editing the Plist Payload of a Config
-    #   profile may break the profile. Make sure you test on a fake profile
-    #   before using this method in production.
-    #
-    # @return [void]
-    #
-    def payload_content=(new_content)
-      payload_plist_data = parsed_payloads
-      payload_plist_data['PayloadContent'] = new_content
-      @payloads = JSS.xml_plist_from new_content
-      @need_to_update = true
-      @update_payloads = true
-    end
-
     # @return [Array<String>] the PayloadType of each payload (e.g. com.apple.caldav.account)
     #
     def payload_types
       payload_content.map { |p| p['PayloadType'] }
-    end
-
-    # clear flag after updating
-    def update(redeploy_to_all: false)
-      @redeploy_on_update = redeploy_to_all ? REDEPLOY_ALL : REDEPLOY_NEWLY_ASSIGNED
-      super()
-      # always reset to newly assigned
-      @redeploy_on_update = REDEPLOY_NEWLY_ASSIGNED
-      @update_payloads = nil
-    end
-
-    # wrapper with param
-    def save(redeploy_to_all: false)
-      if @in_jss
-        raise JSS::UnsupportedError, 'Updating this object in the JSS is currently not supported by ruby-jss' unless updatable?
-
-        update redeploy_to_all: redeploy_to_all
-      else
-        raise JSS::UnsupportedError, 'Creating this object in the JSS is currently not supported by ruby-jss' unless creatable?
-
-        create
-      end
     end
 
     # Private Instance Methods
@@ -195,10 +140,7 @@ module JSS
       gen = obj.add_element('general')
       gen.add_element('description').text = @description
       gen.add_element('redeploy_on_update').text = @redeploy_on_update
-      if @update_payloads
-        payloads_plist_xml = JSS.escape_xml(@payloads.gsub(/^\t*/, '').gsub(">\n", '>'))
-        gen.add_element('payloads').text = payloads_plist_xml
-      end
+
       obj << @scope.scope_xml
       add_self_service_xml doc
       add_category_to_xml doc

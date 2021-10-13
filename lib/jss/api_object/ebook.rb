@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -23,11 +23,12 @@
 ###
 ###
 
+# This is just a stub for now.
 
 #
 module JSS
 
-  # This is just a stub for now.
+  #
   class EBook < APIObject
 
     include Sitable

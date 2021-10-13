@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -23,195 +23,75 @@
 #
 #
 
+#
 module JSS
 
   # A collection of useful utility methods. Mostly for
   # converting values between formats, parsing data, and
   # user interaction.
 
-  # Hash of 'minor' => 'maint'
-  # The maximum maint release for macOS 10.minor.maint
-  # e.g the highest release of 10.6 was 10.6.8, the highest release of
-  # 10.15 was 10.15.7
+  # Converts an OS Version into an Array of higher OS versions.
   #
-  # 12 is the default for the current OS and higher
-  # (and hoping apple doesn't release 10.16.13)
-  OS_TEN_MAXS = {
-      2 => 8,
-      3 => 9,
-      4 => 11,
-      5 => 8,
-      6 => 8,
-      7 => 5,
-      8 => 5,
-      9 => 5,
-      10 => 5,
-      11 => 6,
-      12 => 6,
-      13 => 6,
-      14 => 6,
-      15 => 7
-    }
-
-  # Hash of 'major' => 'minor'
-  # The maximum minor release for macOS major.minor
-  # e.g. the highest release of 11 is 11.12
+  # It's unlikely that this library will still be in use as-is by the release of OS X 10.19.15.
+  # Hopefully well before then JAMF will implement a "minimum OS" in the JSS itself.
   #
-  # 12 is the default for the current OS and higher
-  # (and hoping apple doesn't release, e.g.,  11.13)
-  MAC_OS_MAXS = {
-    11 => 12,
-    12 => 12,
-    13 => 12,
-    14 => 12,
-    15 => 12,
-    16 => 12,
-    17 => 12,
-    18 => 12,
-    19 => 12,
-    20 => 12
-  }
-
-  # Converts an OS Version into an Array of equal or higher OS versions, up to
-  # some non-existant max, hopefully far in the future, currently 20.12.10
+  # @param min_os [String] the mimimum OS version to expand, e.g. ">=10.6.7"  or "10.6.7"
   #
-  # This array can then be joined with commas and used as the value of the
-  # os_requirements for Packages and Scripts.
-  #
-  # It's unlikely that this method, as written, will still be in use by
-  # the release of macOS 20.12.10, but currently thats the upper limit.
-  #
-  # Hopefully well before then JAMF will implement a "minimum OS" in Jamf Pro
-  # itself, then we could avoid the inherant limitations in using a method like
-  # this.
-  #
-  # When the highest maint. release of an OS version is not known, because its
-  # the currently released OS version or higher, then this method assumes '12'
-  # e.g. '10.16.12', '11.12', '12.12', etc.
-  #
-  # Apple has never released more than 11 updates to a version of macOS
-  # (that being 10.4), so hopefully 12 is enough
-  #
-  # Since Big Sur might report itself as either '10.16' or '11.x.x', this method
-  # will allow for both possibilities, and the array will contain whatever
-  # iterations needed for both version numbers
-  #
-  # @param min_os [String] the mimimum OS version to expand, e.g. ">=10.9.4"  or "11.1"
-  #
-  # @return [Array] Nearly all potential OS versions from the minimum to 20.12.10
+  # @return [Array] Nearly all potential OS versions from the minimum to 10.19.x.
   #
   # @example
-  #   JSS.expand_min_os ">=10.9.4" # => returns this array
-  #    # ["10.9.4",
-  #    #  "10.9.5",
-  #    #  "10.10.x"
-  #    #  ...
+  #   JSS.expand_min_os ">=10.6.7" # => returns this array
+  #    # ["10.6.7",
+  #    #  "10.6.8",
+  #    #  "10.6.9",
+  #    #  "10.6.10",
+  #    #  "10.6.11",
+  #    #  "10.6.12",
+  #    #  "10.6.13",
+  #    #  "10.6.14",
+  #    #  "10.6.15",
+  #    #  "10.7.x",
+  #    #  "10.8.x",
+  #    #  "10.9.x",
+  #    #  "10.10.x",
+  #    #  "10.11.x",
+  #    #  "10.12.x",
+  #    #  "10.13.x",
+  #    #  "10.14.x",
+  #    #  "10.15.x",
   #    #  "10.16.x",
-  #    #  "11.x",
-  #    #  "12.x",
-  #    #  ...
-  #    #  "20.x"]
+  #    #  "10.17.x",
+  #    #  "10.18.x",
+  #    #  "10.19.x"]
   #
   #
   def self.expand_min_os(min_os)
     min_os = min_os.delete '>='
 
     # split the version into major, minor and maintenance release numbers
-    major, minor, maint = min_os.split('.')
-    minor = 'x' if minor.nil? || minor == '0'
+    (maj, min, maint) = min_os.split('.')
     maint = 'x' if maint.nil? || maint == '0'
 
-    ok_oses = []
+    # if the maint release number is an "x" just start the list of OK OS's with it
+    if maint == 'x'
+      ok_oses = [maj + '.' + min.to_s + '.x']
 
-    # Deal with 10.x.x up to 10.16
-    if major == '10'
-
-      # In big sur with SYSTEM_VERSION_COMPAT
-      # set, it will only ever report as `10.16`
-      # So if major is 10 and minor is 16, ignore maint
-      # and start explicitly at '10.16'
-      if minor == '16'
-        ok_oses << '10.16'
-
-      # But for Catalina and below, we need to
-      # expand things out
-      else
-        # e.g. 10.14.x
-        # doesn't expand to anything
-        if maint == 'x'
-          ok_oses << "10.#{minor}.x"
-
-        # e.g. 10.15.5
-        # expand to 10.15.5, 10.15.6, 10.15.7
-        else
-          max_maint_for_minor = OS_TEN_MAXS[minor.to_i]
-
-          (maint.to_i..max_maint_for_minor).each do |m|
-            ok_oses << "#{major}.#{minor}.#{m}"
-          end # each m
-        end # if maint == x
-
-        # now if we started below catalina, account for everything
-        # up to 10.15.x
-        if minor.to_i < 15
-          ((minor.to_i + 1)..15).each { |v| ok_oses << "10.#{v}.x" }
-        end
-
-        # and add big sur with SYSTEM_VERSION_COMPAT
-        ok_oses << '10.16'
-      end # if minor == 16
-
-      # now reset these so we can go higher
-      major = '11'
-      minor = 'x'
-      maint = 'x'
-    end # if major == 10
-
-    # if the min os is 11.0.0 or equiv, and we aven't added 10.16
-    # for SYSTEM_VERSION_COMPAT, add it now
-    if ['11', '11.x', '11.x.x', '11.0', '11.0.0'].include?(min_os) && !ok_oses.include?('10.16')
-      ok_oses << '10.16'
-    end
-
-    # e.g. 11.x, or 11.x.x
-    # expand to 11.x, 12.x, 13.x, ... 20.x
-    if minor == 'x'
-      ((major.to_i)..20).each { |v| ok_oses << "#{v}.x" }
-
-    # e.g. 11.2.x
-    # expand to 11.2.x, 11.3.x, ... 11.12.x,
-    #   12.x, 13.x,  ... 20.x
-    elsif maint == 'x'
-      # first expand the minors out to their max
-      # e.g. 11.2.x, 11.3.x, ... 11.12.x
-      max_minor_for_major = MAC_OS_MAXS[major.to_i]
-      ((minor.to_i)..max_minor_for_major).each do |m|
-        ok_oses << "#{major}.#{m}.x"
-      end # each m
-
-      # then add the majors out to 20
-      ((major.to_i + 1)..20).each { |v| ok_oses << "#{v}.x" }
-
-    # e.g. 11.2.3
-    # expand to 11.2.3, 11.2.4, ... 11.2.10,
-    #   11.3.x, 11.4.x, ... 11.12.x,
-    #   12.x, 13.x, ... 20.x
+    # otherwise, start with it and explicitly add all maint releases up to 15
+    # (and hope apple doesn't do more than 15 maint releases for an OS)
     else
-      # first expand the maints out to 10
-      # e.g. 11.2.3, 11.2.4, ... 11.2.10
-      ((maint.to_i)..10).each { |mnt| ok_oses << "#{major}.#{minor}.#{mnt}" }
-
-      # then expand the minors out to their max
-      # e.g. 11.3.x, ... 11.12.x
-      max_minor_for_major = MAC_OS_MAXS[major.to_i]
-      ((minor.to_i + 1)..max_minor_for_major).each { |min| ok_oses << "#{major}.#{min}.x" }
-
-      # then add the majors out to 20
-      ((major.to_i + 1)..20).each { |v| ok_oses << "#{v}.x" }
+      ok_oses = []
+      (maint.to_i..15).each do |m|
+        ok_oses << maj + '.' + min + '.' + m.to_s
+      end # each m
     end
 
+    # now account for all OS X versions starting with 10.
+    # up to at least 10.19.x
+    ((min.to_i + 1)..19).each do |v|
+      ok_oses << maj + '.' + v.to_s + '.x'
+    end # each v
     ok_oses
-  end # def self.expand_min_os(min_os)
+  end
 
   # Scripts and packages can have processor limitations.
   # This method tests a given processor, against a requirement
@@ -229,7 +109,6 @@ module JSS
   #
   def self.processor_ok?(requirement, processor = nil)
     return true if requirement.to_s.empty? || requirement =~ /none/i
-
     processor ||= `/usr/bin/uname -p`
     requirement == (processor.to_s.include?('86') ? 'x86' : 'ppc')
   end
@@ -250,7 +129,6 @@ module JSS
   def self.os_ok?(requirement, os_to_check = nil)
     return true if requirement.to_s =~ /none/i
     return true if requirement.to_s == 'n'
-
     requirement = JSS.to_s_and_a(requirement)[:arrayform]
     return true if requirement.empty?
 
@@ -310,26 +188,19 @@ module JSS
     { stringform: valstr, arrayform: valarr }
   end # to_s_and_a
 
-  # Parse a plist into a Ruby data structure. The plist parameter may be
-  # a String containing an XML plist, or a path to a plist file, or it may be
-  # a Pathname object pointing to a plist file. The plist files may be XML or
-  # binary.
+  # Parse a plist into a Ruby data structure.
+  # This enhances Plist::parse_xml taking file paths, as well as XML Strings
+  # and reading the files regardless of binary/XML format.
   #
   # @param plist[Pathname, String] the plist XML, or the path to a plist file
   #
-  # @param symbol_keys[Boolean] should any Hash keys in the result be converted
-  #   into Symbols rather than remain as Strings?
-  #
   # @return [Object] the parsed plist as a ruby hash,array, etc.
   #
-  def self.parse_plist(plist, symbol_keys: false)
-    require 'cfpropertylist'
-
+  def self.parse_plist(plist)
     # did we get a string of xml, or a string pathname?
     case plist
     when String
-      return CFPropertyList.native_types(CFPropertyList::List.new(data: plist).value, symbol_keys) if plist.include? '</plist>'
-
+      return Plist.parse_xml plist if plist.include? '</plist>'
       plist = Pathname.new plist
     when Pathname
       true
@@ -340,29 +211,8 @@ module JSS
     # if we're here, its a Pathname
     raise JSS::MissingDataError, "No such file: #{plist}" unless plist.file?
 
-    CFPropertyList.native_types(CFPropertyList::List.new(file: plist).value, symbol_keys)
+    Plist.parse_xml `/usr/libexec/PlistBuddy -x -c print #{Shellwords.escape(plist.to_s)}`.force_encoding('UTF-8')
   end # parse_plist
-
-  # Convert any ruby data to an XML plist.
-  #
-  # NOTE: Binary data is tricky. Easiest way is to pass in a
-  # Pathname or IO object (anything that responds to `read` and
-  # returns a bytestring)
-  # and then the CFPropertyList.guess method will read it and
-  # convert it to a Plist <data> element with base64 encoded
-  # data.
-  # For more info, see CFPropertyList.guess
-  #
-  # @param data [Object] the data to be converted, usually a Hash
-  #
-  # @return [String] the object converted into an XML plist
-  #
-  def self.xml_plist_from(data)
-    require 'cfpropertylist'
-    plist = CFPropertyList::List.new
-    plist.value = CFPropertyList.guess(data, convert_unknown_to_string: true)
-    plist.to_str(CFPropertyList::List::FORMAT_XML)
-  end
 
   # Converts anything that responds to #to_s to a Time, or nil
   #
@@ -387,7 +237,9 @@ module JSS
 
     # if the UTC offset of the datetime is zero, make a new one with the correct local offset
     # (which might also be zero if we happen to be in GMT)
-    the_dt = DateTime.new(the_dt.year, the_dt.month, the_dt.day, the_dt.hour, the_dt.min, the_dt.sec, JSS::TIME_ZONE_OFFSET) if the_dt.offset.zero?
+    if the_dt.offset.zero?
+      the_dt = DateTime.new(the_dt.year, the_dt.month, the_dt.day, the_dt.hour, the_dt.min, the_dt.sec, JSS::TIME_ZONE_OFFSET)
+    end
     # now convert it to a Time and return it
     Time.at the_dt.strftime('%s').to_i, usec
   end # parse_time
@@ -409,7 +261,6 @@ module JSS
   #
   def self.epoch_to_time(epoch)
     return nil if NIL_DATES.include? epoch
-
     Time.at(epoch.to_i / 1000.0)
   end # parse_date
 
@@ -429,7 +280,6 @@ module JSS
   def self.api_object_class(name)
     klass = api_object_names[name.downcase.to_sym]
     raise JSS::InvalidDataError, "Unknown API Object Class: #{name}" unless klass
-
     klass
   end
 
@@ -447,13 +297,11 @@ module JSS
   #
   def self.api_object_names
     return @api_object_names if @api_object_names
-
     @api_object_names ||= {}
     JSS.constants.each do |const|
       klass = JSS.const_get const
       next unless klass.is_a? Class
       next unless klass.ancestors.include? JSS::APIObject
-
       @api_object_names[klass.const_get(:RSRC_LIST_KEY).to_sym] = klass if klass.constants.include? :RSRC_LIST_KEY
       @api_object_names[klass.const_get(:RSRC_OBJECT_KEY).to_sym] = klass if klass.constants.include? :RSRC_OBJECT_KEY
     end
@@ -490,7 +338,6 @@ module JSS
   #
   def self.array_to_rexml_array(element, list)
     raise JSS::InvalidDataError, 'Arg. must be an Array.' unless list.is_a? Array
-
     element = element.to_s
     list.map do |v|
       e = REXML::Element.new(element)
@@ -517,7 +364,6 @@ module JSS
   #
   def self.hash_to_rexml_array(hash)
     raise InvalidDataError, 'Arg. must be a Hash.' unless hash.is_a? Hash
-
     ary = []
     hash.each_pair do |k, v|
       el = REXML::Element.new k.to_s
@@ -596,11 +442,11 @@ module JSS
 
     {
       major: major.to_i,
-      minor: minor.to_i,
-      revision: revision.to_i,
-      maint: revision.to_i,
-      patch: revision.to_i,
-      build: build,
+      minor:  minor.to_i,
+      revision:  revision.to_i,
+      maint:  revision.to_i,
+      patch:  revision.to_i,
+      build:  build,
       version: Gem::Version.new("#{major}.#{minor}.#{revision}")
     }
   end
@@ -625,7 +471,6 @@ module JSS
     @stdin_lines ||= ($stdin.tty? ? [] : $stdin.read.lines.map { |l| l.chomp("\n") })
 
     return @stdin_lines.join("\n") if line <= 0
-
     idx = line - 1
     @stdin_lines[idx]
   end
@@ -658,8 +503,9 @@ module JSS
   # @return [Boolean] The new state of devmode
   #
   def self.devmode(setting)
-    @devmode = setting == :on
+    @devmode = setting == :on ? true : false
   end
+
 
   # is devmode currently on?
   #

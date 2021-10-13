@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -71,6 +71,9 @@ module JSS
     ### The hash key used for the JSON object output.
     ### It's also used in various error messages
     RSRC_OBJECT_KEY = :user_group
+
+    ### these keys, as well as :id and :name,  are present in valid API JSON data for this class
+    VALID_DATA_KEYS = [:is_smart, :users ]
 
     ### this allows the parent Group class to do things right
     MEMBER_CLASS = JSS::User

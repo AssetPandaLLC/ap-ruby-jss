@@ -1,4 +1,4 @@
-# Copyright ''
+# Copyright 2019 Pixar
 
 #
 #    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -68,6 +68,7 @@ module JSS
         'more than',
         'less than',
         'greater than',
+        'less than',
         'greater than or equal',
         'less than or equal',
         'before (yyyy-mm-dd)',

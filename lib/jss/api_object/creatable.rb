@@ -1,4 +1,4 @@
-### Copyright ''
+### Copyright 2019 Pixar
 
 ###
 ###    Licensed under the Apache License, Version 2.0 (the "Apache License")
@@ -71,21 +71,15 @@ module JSS
     #
     # @return [Integer] the jss ID of the newly created object
     #
-    def create
+    def create(api: nil)
+      api ||= @api
       raise JSS::UnsupportedError, "Creating or editing #{self.class::RSRC_LIST_KEY} isn't yet supported. Please use other Casper workflows." unless creatable?
-
       raise AlreadyExistsError, "This #{self.class::RSRC_OBJECT_KEY} already exists. Use #update to make changes." if @in_jss
-
-      @api.post_rsrc(rest_rsrc, rest_xml) =~ %r{><id>(\d+)</id><}
+      api.post_rsrc(rest_rsrc, rest_xml) =~ %r{><id>(\d+)</id><}
       @id = Regexp.last_match(1).to_i
       @in_jss = true
       @need_to_update = false
       @rest_rsrc = "#{self.class::RSRC_BASE}/id/#{@id}"
-
-      # clear any caches for this class
-      # so they'll re-cache as needed
-      @api.flushcache self.class::RSRC_LIST_KEY
-
       @id
     end
 
@@ -109,7 +103,7 @@ module JSS
       orig_id = @id
       @id = nil
       orig_rsrc = @rest_rsrc
-      @rest_rsrc = "#{self.class::RSRC_BASE}/name/#{CGI.escape new_name.to_s}"
+      @rest_rsrc = "#{self.class::RSRC_BASE}/name/#{CGI.escape new_name}"
       orig_api = @api
       @api = api
 
